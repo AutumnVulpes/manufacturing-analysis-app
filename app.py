@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+import kaleido
 
 
 def initialise_preloaded_data():
