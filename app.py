@@ -28,8 +28,6 @@ st.markdown(
         padding-left: 15px; /* Add some internal padding */
     }
 
-    /* Removed .stPlotlyChart height CSS to allow px.scatter height parameter to take effect */
-
     /* Optional: Fine-tune margins for a cleaner look */
     h1 {
         margin-top: 0;
@@ -44,18 +42,24 @@ st.markdown(
         margin-bottom: 15px;
     }
 
-    /* GitHub Logo alignment to the left */
+    /* GitHub Logo and text container alignment (Centralized) */
     .github-logo-container {
         display: flex;
-        justify-content: flex-start; /* Aligns items to the start (left) */
-        padding: 10px 0; /* Keeps some padding */
+        justify-content: center; /* Aligns items to the center */
+        align-items: center; /* Vertically aligns items if they have different heights */
+        padding: 10px 0;
+        margin-top: 10px; /* Add some space from the horizontal rule */
+    }
+    .github-logo-container img {
+        margin-right: 10px; /* Logo margin remains unchanged */
     }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-uploaded_file = st.file_uploader("Upload manufacturing data CSV", type="csv")
+# File uploader label remains "Upload dataset"
+uploaded_file = st.file_uploader("Upload dataset", type="csv")
 
 # Initialize variables outside the if uploaded_file block to prevent errors on initial load
 cleaned_df = pd.DataFrame()
@@ -84,11 +88,11 @@ if uploaded_file is not None:
         st.warning("No numeric columns found for visualization.")
 
 
-    # Create main layout columns - Changed from [3, 7] to [4, 6]
+    # Create main layout columns
     left_col, right_col = st.columns([4, 6])
 
     with left_col:
-        # Create tabs inside the left column - Changed "PCA Analysis" to "PCA Config"
+        # Create tabs inside the left column
         tab_pca, tab_pca_formulas, tab_viz = st.tabs(
             ["PCA Config", "PCA Formulas", "Visualization Config"]
         )
@@ -223,17 +227,16 @@ if uploaded_file is not None:
 
     with right_col:
         st.subheader("Scatter Plot Visualization")
+
         if not filtered_df.empty and x_axis and y_axis and x_axis in filtered_df.columns and y_axis in filtered_df.columns:
             fig = px.scatter(
                 filtered_df,
                 x=x_axis,
                 y=y_axis,
-                title=f"{y_axis} vs {x_axis}",
-                height=600 # Set fixed height here for a roughly square shape
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
+                title=f"{y_axis} vs {x_axis}"
+            )   
             img_bytes = fig.to_image(format="png")
+
             st.download_button(
                 "Download Graph as PNG",
                 img_bytes,
@@ -241,6 +244,8 @@ if uploaded_file is not None:
                 "image/png",
                 key='download-png-plot'
             )
+            st.plotly_chart(fig, use_container_width=True)
+
         elif uploaded_file is None:
             st.info("Upload a CSV file to begin analysis and visualization.")
         else:
@@ -249,17 +254,31 @@ if uploaded_file is not None:
 else:
     st.info("Please upload a CSV file to begin analysis")
 
-# GitHub repo link at the bottom
+# GitHub footer with theme-appropriate SVG icon
 st.markdown("---")
-github_logo_url = "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+theme_base = st.config.get_option("theme.base")
 github_repo_url = "https://github.com/AutumnVulpes/manufacturing-analysis-app"
 
-# Embed the logo within an anchor tag using st.markdown and align left
+# Set color based on theme
+if theme_base == "dark":
+    fill_color = "rgb(145, 152, 161)"  # Dark theme color
+else:
+    fill_color = "rgb(89, 99, 110)"    # Light theme color
+
+# SVG with dynamic fill color
+github_svg = f'''
+<svg xmlns="http://www.w3.org/2000/svg" height="20" viewBox="0 0 16 16" width="20" aria-hidden="true" class="d-block">
+    <path fill="{fill_color}" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+</svg>
+'''
+
+# Embed the SVG and text
 st.markdown(
     f'<div class="github-logo-container">'
     f'<a href="{github_repo_url}" target="_blank">'
-    f'<img src="{github_logo_url}" alt="GitHub Repository" width="40">' # Width set to 40px
+    f'{github_svg}'
     f'</a>'
+    f'<span style="margin-left: 10px;">Made by <a href="{github_repo_url}" target="_blank">@AutumnVulpes</a></span>'
     f'</div>',
     unsafe_allow_html=True
 )
