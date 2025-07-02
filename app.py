@@ -6,12 +6,14 @@ import plotly.io as pio
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
+# Set explicit headless parameters for Chromium for streamlit cloud
+# Remove if only deploying locally
 pio.kaleido.scope.chromium_args = (
-    "--headless",
-    "--no-sandbox",
-    "--single-process",
-    "--disable-gpu",
-)  # Set explicit headless parameters for Chromium for streamlit cloud
+   "--headless",
+   "--no-sandbox",
+   "--single-process",
+   "--disable-gpu",
+)
 
 
 def initialise_preloaded_data():
@@ -128,16 +130,31 @@ if uploaded_file is not None:
                 scaler = StandardScaler()
                 scaled_data = scaler.fit_transform(cleaned_df[pca_cols])
 
-                pca = PCA(n_components=2)
+                # Compute all principal components
+                pca = PCA()
                 pca_components = pca.fit_transform(scaled_data)
 
+                # Store PCA results including explained variance
                 pca_results_dict["pca_object"] = pca
                 pca_results_dict["pca_cols"] = pca_cols
+                pca_results_dict["explained_variance"] = pca.explained_variance_ratio_
+                pca_results_dict["cumulative_variance"] = (
+                    pca.explained_variance_ratio_.cumsum()
+                )
 
+                # Add first two principal components to dataframe
                 cleaned_df["PC1"] = pca_components[:, 0]
                 cleaned_df["PC2"] = pca_components[:, 1]
                 if "PC1" not in numeric_cols:  # Prevent adding duplicates on re-run
                     numeric_cols.extend(["PC1", "PC2"])
+
+                # Calculate optimal component count for 95% variance
+                cumulative_variance = pca_results_dict["cumulative_variance"]
+                n_components_95 = next(
+                    (i + 1 for i, v in enumerate(cumulative_variance) if v >= 0.95),
+                    len(cumulative_variance),
+                )
+                pca_results_dict["n_components_95"] = n_components_95
 
                 st.subheader("Data with Principal Components")
                 st.write(cleaned_df.head())
@@ -266,21 +283,105 @@ if uploaded_file is not None:
                 filtered_df = pd.DataFrame()
 
     with right_col:
-        st.subheader("Scatter Plot Visualization")
+        # Create tabs for visualizations
+        tab_scatter, tab_scree, tab_cumulative = st.tabs(
+            ["Scatter Plot", "Scree Plot", "Cumulative Explained Variance"]
+        )
 
-        if is_valid_plot_config(filtered_df, x_axis, y_axis):
-            fig = px.scatter(
-                filtered_df, x=x_axis, y=y_axis, title=f"{y_axis} vs {x_axis}"
-            )
-            download_plotly_figure(fig, "scatter-plot.png")
-            st.plotly_chart(fig, use_container_width=True)
+        with tab_scatter:
+            st.subheader("Scatter Plot Visualization")
+            if is_valid_plot_config(filtered_df, x_axis, y_axis):
+                fig = px.scatter(
+                    filtered_df, x=x_axis, y=y_axis, title=f"{y_axis} vs {x_axis}"
+                )
+                download_plotly_figure(fig, "scatter-plot.png")
+                st.plotly_chart(fig, use_container_width=True)
+            elif uploaded_file is None:
+                st.info("Upload a CSV file to begin analysis and visualization.")
+            else:
+                st.info(
+                    "Select valid X and Y axes in the 'Visualization Config' tab on the left to see the plot."
+                )
 
-        elif uploaded_file is None:
-            st.info("Upload a CSV file to begin analysis and visualization.")
-        else:
-            st.info(
-                "Select valid X and Y axes in the 'Visualization Config' tab on the left to see the plot."
-            )
+        with tab_scree:
+            st.subheader("Scree Plot")
+            if pca_results_dict.get("explained_variance") is not None:
+                # Create scree plot data
+                explained_variance = pca_results_dict["explained_variance"]
+                df_scree = pd.DataFrame(
+                    {
+                        "Component": [
+                            f"PC{i + 1}" for i in range(len(explained_variance))
+                        ],
+                        "Explained Variance": explained_variance,
+                    }
+                )
+                fig = px.line(
+                    df_scree,
+                    x="Component",
+                    y="Explained Variance",
+                    title="Variance Explained by Principal Components",
+                    markers=True,
+                )
+                # Add download button
+                download_plotly_figure(fig, "scree-plot.png")
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Run PCA in the 'PCA Config' tab to see the scree plot.")
+
+        with tab_cumulative:
+            st.subheader("Cumulative Explained Variance")
+            if pca_results_dict.get("cumulative_variance") is not None:
+                cumulative_variance = pca_results_dict["cumulative_variance"]
+                n_components_95 = pca_results_dict.get("n_components_95", 0)
+
+                # Create cumulative variance plot data
+                component_indices = list(range(len(cumulative_variance)))
+                component_labels = [f"PC{i + 1}" for i in component_indices]
+                df_cumulative = pd.DataFrame(
+                    {
+                        "Component Index": component_indices,
+                        "Component": component_labels,
+                        "Cumulative Variance": cumulative_variance,
+                    }
+                )
+                fig = px.line(
+                    df_cumulative,
+                    x="Component Index",
+                    y="Cumulative Variance",
+                    title="Cumulative Explained Variance",
+                    markers=True,
+                )
+
+                # Set custom x-axis tick labels
+                fig.update_xaxes(tickvals=component_indices, ticktext=component_labels)
+
+                # Add 95% threshold line and annotation
+                fig.add_hline(
+                    y=0.95,
+                    line_dash="dash",
+                    line_color="red",
+                    annotation_text="95% Variance",
+                    annotation_position="bottom right",
+                )
+
+                # Add marker for optimal component count
+                if n_components_95 > 0:
+                    fig.add_vline(
+                        x=n_components_95 - 1,
+                        line_dash="dash",
+                        line_color="green",
+                        annotation_text=f"Optimal: {n_components_95} components",
+                        annotation_position="top right",
+                    )
+
+                # Add download button
+                download_plotly_figure(fig, "cumulative-variance.png")
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info(
+                    "Run PCA in the 'PCA Config' tab to see the cumulative variance plot."
+                )
 
 else:
     st.info("Please upload a CSV file to begin analysis")
