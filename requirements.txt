@@ -1,4 +1,5 @@
 streamlit
 pandas
-plotly
+plotly>=6.2.0
 scikit-learn
+kaleido==0.2.1
