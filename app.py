@@ -1,8 +1,17 @@
+# Imports, setup and functions
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.io as pio
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+
+pio.kaleido.scope.chromium_args = (
+    "--headless",
+    "--no-sandbox",
+    "--single-process",
+    "--disable-gpu"
+) # Set explicit headless parameters for Chromium for streamlit cloud
 
 def initialise_preloaded_data():
     return {
@@ -14,10 +23,8 @@ def initialise_preloaded_data():
         "pca_results_dict": {"pca_object": None, "pca_cols": []}
     }
 
-
 def is_valid_plot_config(df, x, y):
     return not df.empty and x and y and x in df.columns and y in df.columns
-
 
 def download_plotly_figure(fig, filename="plot.png"):
     """Convert Plotly figure to PNG and create download button"""
@@ -29,7 +36,6 @@ def download_plotly_figure(fig, filename="plot.png"):
         "image/png",
         key=f'download-png-{filename.replace(".", "-")}'
     )
-
 
 def render_github_footer():
     st.markdown("---")
@@ -58,7 +64,7 @@ def render_github_footer():
         unsafe_allow_html=True
     )
 
-
+# WebApp Code
 st.set_page_config(layout="wide")
 
 st.title("Manufacturing Data Analysis Dashboard")
