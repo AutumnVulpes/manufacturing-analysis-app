@@ -5,33 +5,33 @@ import plotly.express as px
 import plotly.io as pio
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+from datatypes import PCAState, AppState
 
 # Set explicit headless parameters for Chromium for streamlit cloud
 # Remove if only deploying locally
 pio.kaleido.scope.chromium_args = (
-   "--headless",
-   "--no-sandbox",
-   "--single-process",
-   "--disable-gpu",
+  "--headless",
+  "--no-sandbox",
+  "--single-process",
+  "--disable-gpu",
 )
 
 
-def initialise_preloaded_data():
-    return {
-        "cleaned_df": pd.DataFrame(),
-        "numeric_cols": [],
-        "x_axis": None,
-        "y_axis": None,
-        "filtered_df": pd.DataFrame(),
-        "pca_results_dict": {"pca_object": None, "pca_cols": []},
-    }
+@st.cache_data
+def clean_csv_file(csv_file):
+    df = pd.read_csv(csv_file)
+    cleaned_df = df.dropna()
+    numeric_cols = cleaned_df.select_dtypes(
+        include=["float64", "int64"]
+    ).columns.tolist()
+    return cleaned_df, numeric_cols
 
 
 def is_valid_plot_config(df, x, y):
     return not df.empty and x and y and x in df.columns and y in df.columns
 
 
-def download_plotly_figure(fig, filename="plot.png"):
+def create_download_plotly_figure_button(fig, filename="plot.png"):
     """Convert Plotly figure to PNG and create download button"""
     img_bytes = fig.to_image(format="png")
     st.download_button(
@@ -45,7 +45,7 @@ def download_plotly_figure(fig, filename="plot.png"):
 
 def render_github_footer():
     st.markdown("---")
-    theme_base = st.config.get_option("theme.base")
+    theme_base = st.get_option("theme.base")
     github_repo_url = "https://github.com/AutumnVulpes/manufacturing-analysis-app"
 
     if theme_base == "dark":
@@ -79,23 +79,35 @@ st.title("Manufacturing Data Analysis Dashboard")
 with open("styles.css") as f:
     st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
-uploaded_file = st.file_uploader("Upload dataset", type="csv")
+uploaded_csv_file = st.file_uploader("Upload dataset", type="csv")
 
-state = initialise_preloaded_data()
-cleaned_df = state["cleaned_df"]
-numeric_cols = state["numeric_cols"]
-x_axis = state["x_axis"]
-y_axis = state["y_axis"]
-filtered_df = state["filtered_df"]
-pca_results_dict = state["pca_results_dict"]
+# Initialize session state
+if "app_state" not in st.session_state:
+    st.session_state.app_state = AppState(
+        cleaned_df=pd.DataFrame(),
+        numeric_cols=[],
+        x_axis="",
+        y_axis="",
+        filtered_df=pd.DataFrame(),
+        pca_state=PCAState(
+            pca_object=None,
+            pca_cols=[],
+            explained_variance=[],
+            cumulative_variance=[],
+            min_components_95_variance=0,
+        ),
+    )
 
-if uploaded_file is not None:
-    df = pd.read_csv(uploaded_file)
-    cleaned_df = df.dropna()
+app_state = st.session_state.app_state
+cleaned_df = app_state.cleaned_df
+numeric_cols = app_state.numeric_cols
+x_axis = app_state.x_axis
+y_axis = app_state.y_axis
+filtered_df = app_state.filtered_df
+pca_results_dict = app_state.pca_state
 
-    numeric_cols = cleaned_df.select_dtypes(
-        include=["float64", "int64"]
-    ).columns.tolist()
+if uploaded_csv_file is not None:
+    cleaned_df, numeric_cols = clean_csv_file(uploaded_csv_file)
 
     if len(numeric_cols) >= 2:
         x_axis = numeric_cols[0]
@@ -107,7 +119,6 @@ if uploaded_file is not None:
     left_col, right_col = st.columns([4, 6])
 
     with left_col:
-        # Create tabs inside the left column
         tab_pca, tab_pca_formulas, tab_viz = st.tabs(
             ["PCA Config", "PCA Formulas", "Visualization Config"]
         )
@@ -127,34 +138,35 @@ if uploaded_file is not None:
             if len(pca_cols) >= 2:
                 st.info(f"PCA will be performed on: {', '.join(pca_cols)}")
 
+                # TODO(AutumnVulpes) - Function for Standardization/PCA
                 scaler = StandardScaler()
                 scaled_data = scaler.fit_transform(cleaned_df[pca_cols])
 
-                # Compute all principal components
                 pca = PCA()
                 pca_components = pca.fit_transform(scaled_data)
 
-                # Store PCA results including explained variance
-                pca_results_dict["pca_object"] = pca
-                pca_results_dict["pca_cols"] = pca_cols
-                pca_results_dict["explained_variance"] = pca.explained_variance_ratio_
-                pca_results_dict["cumulative_variance"] = (
-                    pca.explained_variance_ratio_.cumsum()
-                )
+                app_state.pca_state.pca_object = pca
+                app_state.pca_state.pca_cols = pca_cols
+                explained_variance = pca.explained_variance_ratio_
+                cumulative_variance = explained_variance.cumsum()
+                app_state.pca_state.explained_variance = explained_variance.tolist()
+                app_state.pca_state.cumulative_variance = cumulative_variance.tolist()
 
-                # Add first two principal components to dataframe
-                cleaned_df["PC1"] = pca_components[:, 0]
-                cleaned_df["PC2"] = pca_components[:, 1]
-                if "PC1" not in numeric_cols:  # Prevent adding duplicates on re-run
-                    numeric_cols.extend(["PC1", "PC2"])
-
-                # Calculate optimal component count for 95% variance
-                cumulative_variance = pca_results_dict["cumulative_variance"]
-                n_components_95 = next(
+                # Determine number of optimal principal components to reach 95% variance
+                min_components_95_variance = next(
                     (i + 1 for i, v in enumerate(cumulative_variance) if v >= 0.95),
                     len(cumulative_variance),
                 )
-                pca_results_dict["n_components_95"] = n_components_95
+                app_state.pca_state.min_components_95_variance = (
+                    min_components_95_variance
+                )
+
+                # Append columns with optimal principal components to df
+                for i in range(min_components_95_variance):
+                    col_name = f"PC{i + 1}"
+                    cleaned_df[col_name] = pca_components[:, i]
+                    if col_name not in numeric_cols:
+                        numeric_cols.append(col_name)
 
                 st.subheader("Data with Principal Components")
                 st.write(cleaned_df.head())
@@ -190,31 +202,25 @@ if uploaded_file is not None:
         with tab_pca_formulas:
             st.subheader("Principal Component Formulas")
             if (
-                pca_results_dict["pca_object"] is not None
-                and pca_results_dict["pca_cols"]
+                app_state.pca_state.pca_object is not None
+                and app_state.pca_state.pca_cols
             ):
-                pca_obj = pca_results_dict["pca_object"]
-                pca_cols_for_formula = pca_results_dict["pca_cols"]
+                pca_obj = app_state.pca_state.pca_object
+                pca_cols_for_formula = app_state.pca_state.pca_cols
 
-                with st.expander("PC1 Formula Details"):
-                    st.write("PC1 = ")
-                    for i, col in enumerate(pca_cols_for_formula):
-                        if pca_obj.components_.shape[1] > i:
-                            formula = (
-                                rf"{pca_obj.components_[0][i]:.4f} \times "
-                                rf"\frac{{{col} - \mu_{{{col}}}}}{{\sigma_{{{{col}}}}}}"
-                            )
-                            st.latex(formula)
+                n_optimal = app_state.pca_state.min_components_95_variance
 
-                with st.expander("PC2 Formula Details"):
-                    st.write("PC2 = ")
-                    for i, col in enumerate(pca_cols_for_formula):
-                        if pca_obj.components_.shape[1] > i:
-                            formula = (
-                                rf"{pca_obj.components_[1][i]:.4f} \times "
-                                rf"\frac{{{col} - \mu_{{{col}}}}}{{\sigma_{{{{col}}}}}}"
-                            )
-                            st.latex(formula)
+                # Render latex formulas for optimal principal components
+                for comp_index in range(n_optimal):
+                    with st.expander(f"PC{comp_index + 1} Formula Details"):
+                        st.write(f"PC{comp_index + 1} = ")
+                        for i, col in enumerate(pca_cols_for_formula):
+                            if pca_obj.components_.shape[1] > i:
+                                formula = (
+                                    rf"{pca_obj.components_[comp_index][i]:.4f} \times "
+                                    rf"\frac{{{col} - \mu_{{{col}}}}}{{\sigma_{{{{col}}}}}}"
+                                )
+                                st.latex(formula)
             else:
                 st.info(
                     "Upload data and run PCA in the 'PCA Config' tab to see formulas."
@@ -240,6 +246,7 @@ if uploaded_file is not None:
                     key="y_axis_select",
                 )
 
+                # TODO(AutumnVulpes) - Functionalise Data Filter option
                 st.subheader("Data Filtering")
                 filters = {}
                 cols_to_filter = []
@@ -284,7 +291,7 @@ if uploaded_file is not None:
 
     with right_col:
         # Create tabs for visualizations
-        tab_scatter, tab_scree, tab_cumulative = st.tabs(
+        tab_scatter, tab_scree, tab_cumulative_variance = st.tabs(
             ["Scatter Plot", "Scree Plot", "Cumulative Explained Variance"]
         )
 
@@ -294,9 +301,9 @@ if uploaded_file is not None:
                 fig = px.scatter(
                     filtered_df, x=x_axis, y=y_axis, title=f"{y_axis} vs {x_axis}"
                 )
-                download_plotly_figure(fig, "scatter-plot.png")
+                create_download_plotly_figure_button(fig, "scatter-plot.png")
                 st.plotly_chart(fig, use_container_width=True)
-            elif uploaded_file is None:
+            elif uploaded_csv_file is None:
                 st.info("Upload a CSV file to begin analysis and visualization.")
             else:
                 st.info(
@@ -305,9 +312,9 @@ if uploaded_file is not None:
 
         with tab_scree:
             st.subheader("Scree Plot")
-            if pca_results_dict.get("explained_variance") is not None:
+            if app_state.pca_state.explained_variance:
                 # Create scree plot data
-                explained_variance = pca_results_dict["explained_variance"]
+                explained_variance = app_state.pca_state.explained_variance
                 df_scree = pd.DataFrame(
                     {
                         "Component": [
@@ -324,16 +331,18 @@ if uploaded_file is not None:
                     markers=True,
                 )
                 # Add download button
-                download_plotly_figure(fig, "scree-plot.png")
+                create_download_plotly_figure_button(fig, "scree-plot.png")
                 st.plotly_chart(fig, use_container_width=True)
             else:
                 st.info("Run PCA in the 'PCA Config' tab to see the scree plot.")
 
-        with tab_cumulative:
+        with tab_cumulative_variance:
             st.subheader("Cumulative Explained Variance")
-            if pca_results_dict.get("cumulative_variance") is not None:
-                cumulative_variance = pca_results_dict["cumulative_variance"]
-                n_components_95 = pca_results_dict.get("n_components_95", 0)
+            if app_state.pca_state.cumulative_variance:
+                cumulative_variance = app_state.pca_state.cumulative_variance
+                min_components_95_variance = (
+                    app_state.pca_state.min_components_95_variance
+                )
 
                 # Create cumulative variance plot data
                 component_indices = list(range(len(cumulative_variance)))
@@ -366,17 +375,16 @@ if uploaded_file is not None:
                 )
 
                 # Add marker for optimal component count
-                if n_components_95 > 0:
+                if min_components_95_variance > 0:
                     fig.add_vline(
-                        x=n_components_95 - 1,
+                        x=min_components_95_variance - 1,
                         line_dash="dash",
                         line_color="green",
-                        annotation_text=f"Optimal: {n_components_95} components",
+                        annotation_text=f"Optimal: {min_components_95_variance} components",
                         annotation_position="top right",
                     )
 
-                # Add download button
-                download_plotly_figure(fig, "cumulative-variance.png")
+                create_download_plotly_figure_button(fig, "cumulative-variance.png")
                 st.plotly_chart(fig, use_container_width=True)
             else:
                 st.info(
