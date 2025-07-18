@@ -4,12 +4,80 @@ import plotly.express as px
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
+# =================================================================================================
+# States and Computations
+# =================================================================================================
 
+@st.cache_data
+def clean_csv_file(csv_file):
+    df = pd.read_csv(csv_file)
+    cleaned_df = df.dropna()
+    numeric_cols = cleaned_df.select_dtypes(
+        include=["float64", "int64"]
+    ).columns.tolist()
+    return cleaned_df, numeric_cols
+
+@st.cache_data
+def load_css():
+    with open("styles.css") as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
+def is_valid_plot_config(df, x, y):
+    return not df.empty and x and y and x in df.columns and y in df.columns
+
+
+
+
+# =================================================================================================
 # Widgets
+# =================================================================================================
+
+# Components --------------------------------------------------------------------------------------
+
+
+def create_download_plotly_figure_button(fig, filename="plot.png"):
+    """Convert Plotly figure to PNG and create download button"""
+    img_bytes = fig.to_image(format="png")
+    st.download_button(
+        "Download Graph as PNG",
+        img_bytes,
+        filename,
+        "image/png",
+        key=f"download-png-{filename.replace('.', '-')}",
+    )
+
+
+def render_github_footer():
+    st.markdown("---")
+    theme_base = st.get_option("theme.base")
+    github_repo_url = "https://github.com/AutumnVulpes/manufacturing-analysis-app"
+
+    if theme_base == "dark":
+        fill_color = "rgb(145, 152, 161)"  # Dark theme color
+    else:
+        fill_color = "rgb(89, 99, 110)"  # Light theme color
+
+    github_svg = f'''
+    <svg xmlns="http://www.w3.org/2000/svg" height="20" viewBox="0 0 16 16" width="20" aria-hidden="true" class="d-block">
+        <path fill="{fill_color}" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+    </svg>
+    '''
+
+    # Embedded github logo and name with hyperlinks to repo
+    st.markdown(
+        f'<div class="github-logo-container">'
+        f'<a href="{github_repo_url}" target="_blank">'
+        f"{github_svg}"
+        f"</a>"
+        f'<span style="margin-left: 10px;">Made by <a href="{github_repo_url}" target="_blank">@AutumnVulpes</a></span>'
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+# Tabs --------------------------------------------------------------------------------------------
+
 def render_cumulative_variance_tab(app_state):
-    """
-    Renders cumulative explained variance visualization tab
-    """
+    """Renders cumulative explained variance visualization tab."""
     st.subheader("Cumulative Explained Variance")
     if app_state.pca_state.cumulative_variance:
         cumulative_variance = app_state.pca_state.cumulative_variance
@@ -275,48 +343,3 @@ def render_pca_tab(cleaned_df, numeric_cols, app_state):
         )
 
     return cleaned_df, numeric_cols, app_state
-
-
-def create_download_plotly_figure_button(fig, filename="plot.png"):
-    """Convert Plotly figure to PNG and create download button"""
-    img_bytes = fig.to_image(format="png")
-    st.download_button(
-        "Download Graph as PNG",
-        img_bytes,
-        filename,
-        "image/png",
-        key=f"download-png-{filename.replace('.', '-')}",
-    )
-
-
-def render_github_footer():
-    st.markdown("---")
-    theme_base = st.get_option("theme.base")
-    github_repo_url = "https://github.com/AutumnVulpes/manufacturing-analysis-app"
-
-    if theme_base == "dark":
-        fill_color = "rgb(145, 152, 161)"  # Dark theme color
-    else:
-        fill_color = "rgb(89, 99, 110)"  # Light theme color
-
-    github_svg = f'''
-    <svg xmlns="http://www.w3.org/2000/svg" height="20" viewBox="0 0 16 16" width="20" aria-hidden="true" class="d-block">
-        <path fill="{fill_color}" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
-    </svg>
-    '''
-
-    # Embedded github logo and name with hyperlinks to repo
-    st.markdown(
-        f'<div class="github-logo-container">'
-        f'<a href="{github_repo_url}" target="_blank">'
-        f"{github_svg}"
-        f"</a>"
-        f'<span style="margin-left: 10px;">Made by <a href="{github_repo_url}" target="_blank">@AutumnVulpes</a></span>'
-        f"</div>",
-        unsafe_allow_html=True,
-    )
-
-
-# Computations
-def is_valid_plot_config(df, x, y):
-    return not df.empty and x and y and x in df.columns and y in df.columns
