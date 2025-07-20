@@ -3,13 +3,27 @@ import pandas as pd
 import plotly.express as px
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+from datatypes import TitleSuggestion, ColumnPair, ColumnComparisonSuggestions, AppState
+from openai import OpenAI
+import instructor
+import json
 
 # =================================================================================================
 # States and Computations
 # =================================================================================================
 
+
 @st.cache_data
-def clean_csv_file(csv_file):
+def clean_csv_file(csv_file) -> tuple[pd.DataFrame, list[str]]:
+    """
+    Clean CSV file by removing rows with missing values and extract numeric columns.
+    
+    Args:
+        csv_file: Uploaded CSV file object from Streamlit file uploader
+        
+    Returns:
+        tuple: (cleaned_dataframe, list_of_numeric_column_names)
+    """
     df = pd.read_csv(csv_file)
     cleaned_df = df.dropna()
     numeric_cols = cleaned_df.select_dtypes(
@@ -17,15 +31,342 @@ def clean_csv_file(csv_file):
     ).columns.tolist()
     return cleaned_df, numeric_cols
 
+
 @st.cache_data
-def load_css():
+def load_css() -> None:
+    """
+    Load and apply CSS styles from styles.css file to the Streamlit app.
+    
+    This function is cached to avoid reloading CSS on every app rerun.
+    """
     with open("styles.css") as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
-def is_valid_plot_config(df, x, y):
+
+def is_valid_plot_config(df: pd.DataFrame, x: str, y: str) -> bool:
+    """
+    Validate if the plot configuration is valid for creating visualizations.
+    
+    Args:
+        df: DataFrame to check
+        x: X-axis column name
+        y: Y-axis column name
+        
+    Returns:
+        bool: True if configuration is valid, False otherwise
+    """
     return not df.empty and x and y and x in df.columns and y in df.columns
 
 
+def get_api_client_config(provider: str, api_key: str) -> tuple[str, dict, str]:
+    """
+    Get API client configuration based on provider.
+    
+    Args:
+        provider: API provider name ("OpenRouter", "Gemini", or "OpenAI")
+        api_key: API key for the selected provider
+        
+    Returns:
+        tuple: (base_url, default_headers, model) configuration for the provider
+    """
+    if provider == "OpenRouter":
+        base_url = "https://openrouter.ai/api/v1"
+        default_headers = {
+            "Authorization": f"Bearer {api_key}",
+            "HTTP-Referrer": "https://manufacturing-analysis-app.streamlit.app",
+            "X-Title": "Manufacturing Analysis Dashboard",
+        }
+        model = "mistralai/mistral-7b-instruct:free"
+    elif provider == "Gemini":
+        base_url = "https://generativelanguage.googleapis.com/v1beta"
+        default_headers = {"x-goog-api-key": api_key}
+        model = "gemini-pro"
+    else:  # OpenAI
+        base_url = "https://api.openai.com/v1"
+        default_headers = {"Authorization": f"Bearer {api_key}"}
+        model = "gpt-3.5-turbo"
+    
+    return base_url, default_headers, model
+
+
+def generate_title_from_csv(
+    provider: str, api_key: str, filename: str, columns: list[str]
+) -> str:
+    """
+    Generate a concise title for the CSV file using AI.
+    
+    Args:
+        provider: API provider name ("OpenRouter", "Gemini", or "OpenAI")
+        api_key: API key for the selected provider
+        filename: Name of the uploaded CSV file
+        columns: List of column names from the CSV file
+        
+    Returns:
+        str: Generated title (max 3 words) or empty string if generation fails
+    """
+    try:
+        base_url, default_headers, model = get_api_client_config(provider, api_key)
+
+        client = OpenAI(
+            base_url=base_url,
+            api_key=api_key,
+            default_headers=default_headers,
+        )
+
+        prompt = (
+            f"Generate a concise, professional title (max 3 words) for a manufacturing data analysis "
+            f"dashboard based on CSV file '{filename}' with columns: {', '.join(columns)}. Do NOT include 'Analysis' or 'Dashboard' in the title."
+        )
+
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            temperature=0.7,
+        )
+        title = response.choices[0].message.content
+        if title:
+            try:
+                data = json.loads(title)
+                if isinstance(data, dict):
+                    title_suggestion = TitleSuggestion(**data)
+                    return title_suggestion.title
+                elif isinstance(data, str):
+                    return data
+                else:
+                    return str(data)
+            except json.JSONDecodeError:
+                # Use title directly because response is a useful string regardless.
+                return title
+        return ""
+    except Exception as e:
+        st.error(f"Title generation failed: {e}")
+        return ""
+
+
+def generate_column_comparison_suggestions_stream(
+    provider: str, api_key: str, numeric_cols: list[str], df_sample: pd.DataFrame
+) -> object | None:
+    """
+    Generate streaming multiple column comparison suggestions using Instructor with partial tokens.
+    
+    Args:
+        provider: API provider name ("OpenRouter", "Gemini", or "OpenAI")
+        api_key: API key for the selected provider
+        numeric_cols: List of numeric column names from the dataset
+        df_sample: Sample DataFrame for statistical analysis
+        
+    Returns:
+        object | None: Streaming iterator of ColumnComparisonSuggestions or None if failed
+    """
+    try:
+        base_url, default_headers, model = get_api_client_config(provider, api_key)
+
+        # Create sample statistics for context, ensuring we handle numeric data properly
+        stats_info = []
+        for col in numeric_cols[:10]:
+            if col in df_sample.columns:
+                # Ensure we're working with numeric data only
+                numeric_data = pd.to_numeric(df_sample[col], errors='coerce').dropna()
+                if len(numeric_data) > 0:
+                    stats = {
+                        "column": col,
+                        "mean": float(numeric_data.mean()),
+                        "std": float(numeric_data.std()),
+                        "min": float(numeric_data.min()),
+                        "max": float(numeric_data.max()),
+                        "count": int(len(numeric_data))
+                    }
+                    stats_info.append(stats)
+
+        # OpenRouter doesn't support function calling, use a simpler approach
+        if provider == "OpenRouter":
+            return _generate_suggestions_openrouter(base_url, default_headers, model, api_key, numeric_cols, stats_info)
+        else:
+            # Use Instructor for Gemini and OpenAI
+            openai_client = OpenAI(
+                base_url=base_url,
+                api_key=api_key,
+                default_headers=default_headers,
+            )
+            
+            client = instructor.from_openai(openai_client, mode=instructor.Mode.JSON)
+
+            prompt = f"""Analyze the following numeric columns from a manufacturing dataset and suggest multiple pairs of columns to compare in visualizations.
+
+            Available columns: {", ".join(numeric_cols)}
+            
+            Sample statistics:
+            {json.dumps(stats_info, indent=2)}
+            
+            Provide 3-5 different column pair recommendations, ranked by priority (1=highest, 2=medium, 3=lowest).
+            
+            Consider factors like:
+            - Potential correlations between variables
+            - Manufacturing process relationships
+            - Data variance and distribution
+            - Business insights that could be gained
+            - Different types of relationships (linear, non-linear, categorical vs continuous)
+            
+            For each recommendation, provide detailed reasoning explaining why this pair would be valuable to analyze.
+            Also provide an overall analysis summary explaining the dataset characteristics and analysis strategy."""
+
+            # Streaming to indicate that the suggestions are AI generated.
+            suggestions_stream = client.chat.completions.create_partial(
+                model=model,
+                response_model=ColumnComparisonSuggestions,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,
+                stream=True,
+            )
+
+            return suggestions_stream
+
+    except Exception as e:
+        st.error(f"Column comparison suggestions failed: {e}")
+        return None
+
+
+def _generate_suggestions_openrouter(base_url: str, default_headers: dict, model: str, api_key: str, numeric_cols: list[str], stats_info: list) -> object:
+    """
+    Generate column suggestions for OpenRouter using regular chat completions (no function calling).
+    
+    Args:
+        base_url: API base URL
+        default_headers: Request headers
+        model: Model name
+        api_key: API key
+        numeric_cols: List of numeric column names
+        stats_info: Statistical information about columns
+        
+    Returns:
+        Generator yielding partial ColumnComparisonSuggestions objects
+    """
+    client = OpenAI(
+        base_url=base_url,
+        api_key=api_key,
+        default_headers=default_headers,
+    )
+
+    # Simplified prompt for better streaming experience
+    prompt = f"""Analyze these manufacturing dataset columns and suggest column pairs for visualization:
+
+Available columns: {", ".join(numeric_cols)}
+
+First, provide an overall analysis of the dataset characteristics and strategy.
+Then suggest 3-4 column pairs ranked by priority (1=highest priority).
+
+For each pair, explain why it would be valuable to analyze.
+
+Format your response as:
+
+OVERALL ANALYSIS:
+[Your analysis here]
+
+RECOMMENDATIONS:
+1. [Column1] vs [Column2] - Priority 1
+   Reasoning: [explanation]
+
+2. [Column1] vs [Column2] - Priority 2  
+   Reasoning: [explanation]
+
+[Continue for 3-4 pairs total]"""
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            stream=True,
+        )
+
+        # Stream the response with text-based parsing
+        full_response = ""
+        import re
+        import time
+        
+        # Track streaming state
+        last_yielded_length = 0
+        analysis_complete = False
+        
+        for chunk in response:
+            if chunk.choices[0].delta.content:
+                full_response += chunk.choices[0].delta.content
+                
+                # Add delay for visible streaming
+                time.sleep(0.03)
+                
+                # Stream partial analysis
+                if "OVERALL ANALYSIS:" in full_response and not analysis_complete:
+                    # Extract analysis section
+                    analysis_start = full_response.find("OVERALL ANALYSIS:") + len("OVERALL ANALYSIS:")
+                    analysis_end = full_response.find("RECOMMENDATIONS:")
+                    
+                    if analysis_end == -1:
+                        # Still building analysis
+                        current_analysis = full_response[analysis_start:].strip()
+                    else:
+                        # Analysis complete
+                        current_analysis = full_response[analysis_start:analysis_end].strip()
+                        analysis_complete = True
+                    
+                    # Only yield if we have significant new content
+                    if len(current_analysis) > last_yielded_length + 20:
+                        last_yielded_length = len(current_analysis)
+                        
+                        # Create partial suggestion object
+                        partial_suggestions = type('PartialSuggestions', (), {
+                            'overall_analysis': current_analysis,
+                            'recommendations': []
+                        })()
+                        yield partial_suggestions
+        
+        # Parse final response into structured format
+        try:
+            # Extract overall analysis
+            analysis_match = re.search(r'OVERALL ANALYSIS:\s*(.*?)\s*RECOMMENDATIONS:', full_response, re.DOTALL)
+            overall_analysis = analysis_match.group(1).strip() if analysis_match else "Analysis not found"
+            
+            # Extract recommendations
+            recommendations = []
+            rec_pattern = r'(\d+)\.\s*([^-\s]+)\s*vs\s*([^-\s]+)\s*-\s*Priority\s*(\d+)\s*Reasoning:\s*([^\n]+)'
+            matches = re.findall(rec_pattern, full_response, re.IGNORECASE)
+            
+            for match in matches[:4]:  # Limit to 4 recommendations
+                rec_num, col1, col2, priority, reasoning = match
+                
+                # Clean column names
+                col1 = col1.strip().strip('[]()').strip()
+                col2 = col2.strip().strip('[]()').strip()
+                
+                # Find matching columns from available list
+                col1_match = next((col for col in numeric_cols if col.lower() in col1.lower() or col1.lower() in col.lower()), col1)
+                col2_match = next((col for col in numeric_cols if col.lower() in col2.lower() or col2.lower() in col.lower()), col2)
+                
+                recommendations.append(ColumnPair(
+                    column1=col1_match,
+                    column2=col2_match,
+                    reasoning=reasoning.strip(),
+                    visualization_type="scatter",
+                    priority=int(priority) if priority.isdigit() else 1
+                ))
+            
+            # Create final suggestions object
+            final_suggestions = ColumnComparisonSuggestions(
+                overall_analysis=overall_analysis,
+                recommendations=recommendations
+            )
+            
+            yield final_suggestions
+            
+        except Exception as e:
+            st.error(f"Failed to parse OpenRouter response: {e}")
+            # Show raw response for debugging
+            st.text_area("Raw response for debugging:", full_response[:1000], height=200)
+            
+    except Exception as e:
+        st.error(f"OpenRouter API call failed: {e}")
+        return None
 
 
 # =================================================================================================
@@ -35,8 +376,14 @@ def is_valid_plot_config(df, x, y):
 # Components --------------------------------------------------------------------------------------
 
 
-def create_download_plotly_figure_button(fig, filename="plot.png"):
-    """Convert Plotly figure to PNG and create download button"""
+def create_download_plotly_figure_button(fig, filename: str = "plot.png") -> None:
+    """
+    Convert Plotly figure to PNG and create a Streamlit download button.
+    
+    Args:
+        fig: Plotly figure object to convert and download
+        filename: Name for the downloaded file (default: "plot.png")
+    """
     img_bytes = fig.to_image(format="png")
     st.download_button(
         "Download Graph as PNG",
@@ -47,7 +394,13 @@ def create_download_plotly_figure_button(fig, filename="plot.png"):
     )
 
 
-def render_github_footer():
+def render_github_footer() -> None:
+    """
+    Render a GitHub footer with repository link and author information.
+    
+    Displays a GitHub logo and link that adapts to the current Streamlit theme
+    (dark or light mode) with appropriate colors.
+    """
     st.markdown("---")
     theme_base = st.get_option("theme.base")
     github_repo_url = "https://github.com/AutumnVulpes/manufacturing-analysis-app"
@@ -74,7 +427,9 @@ def render_github_footer():
         unsafe_allow_html=True,
     )
 
+
 # Tabs --------------------------------------------------------------------------------------------
+
 
 def render_cumulative_variance_tab(app_state):
     """Renders cumulative explained variance visualization tab."""
@@ -241,10 +596,173 @@ def render_viz_config_tab(cleaned_df, numeric_cols, x_axis, y_axis, app_state):
     return filtered_df, x_axis, y_axis, app_state
 
 
+def render_ai_helper_tab(app_state: AppState, uploaded_csv_file):
+    """
+    Renders the AI Helper tab UI.
+
+    Returns updated app_state and a rerun flag.
+    """
+    st.subheader("API Key Management")
+    rerun_needed = False
+
+    with st.expander("Add API Key"):
+        key_name = st.text_input("Name", key="new_key_name")
+        provider = st.selectbox(
+            "Provider", ["OpenRouter", "Gemini", "OpenAI"], key="new_key_provider"
+        )
+        key_value = st.text_input("Key", type="password", key="new_key_value")
+        if st.button("Add Key") and key_name and key_value:
+            app_state.api_keys[key_name] = (provider, key_value)
+            app_state.active_api_key_name = key_name
+            app_state.active_provider = provider
+            st.success(f"Added key: {key_name} for {provider}")
+
+    # TODO(Fox) - Store single API key in session state only.
+    if app_state.api_keys:
+        selected_key = st.selectbox(
+            "Active API Key",
+            options=list(app_state.api_keys.keys()),
+            index=list(app_state.api_keys.keys()).index(app_state.active_api_key_name)
+            if app_state.active_api_key_name
+            and app_state.active_api_key_name in app_state.api_keys
+            else 0,
+            format_func=lambda key: f"{key} ({app_state.api_keys[key][0]})",
+        )
+        if selected_key != app_state.active_api_key_name:
+            app_state.active_api_key_name = selected_key
+            app_state.active_provider = app_state.api_keys[selected_key][0]
+
+    # Generate title when conditions are met.
+    if (
+        app_state.active_api_key_name
+        and uploaded_csv_file
+        and app_state.last_processed_filename != uploaded_csv_file.name
+    ):
+        with st.spinner("Generating title using AI..."):
+            _, key_value = app_state.api_keys[app_state.active_api_key_name]
+            title = generate_title_from_csv(
+                app_state.active_provider,
+                key_value,
+                uploaded_csv_file.name,
+                app_state.cleaned_df.columns.tolist(),
+            )
+            if title:
+                app_state.generated_title = title
+                app_state.last_processed_filename = uploaded_csv_file.name
+                st.success(f"Generated title: {title}")
+                rerun_needed = True
+
+    # Column Comparison Suggestion Feature.
+    # TODO(Fox) - Recommendations should be MULTIPLE pairs.
+    st.subheader("Column Comparison Suggestions")
+
+    if (
+        app_state.active_api_key_name
+        and not app_state.cleaned_df.empty
+        and len(app_state.numeric_cols) >= 2
+    ):
+        if st.button(
+            "🤖 Get AI Column Comparison Suggestions", key="column_suggestion_btn"
+        ):
+            _, key_value = app_state.api_keys[app_state.active_api_key_name]
+
+            # Create placeholders for streaming content.
+            suggestion_container = st.container()
+
+            with suggestion_container:
+                st.write("**Generating column recommendations...**")
+
+                try:
+                    suggestions_stream = generate_column_comparison_suggestions_stream(
+                        app_state.active_provider,
+                        key_value,
+                        app_state.numeric_cols,
+                        app_state.cleaned_df.head(100),  # Use sample for analysis.
+                    )
+
+                    if suggestions_stream:
+                        # Initialize display variables.
+                        current_suggestions = None
+                        
+                        # Create placeholders for streaming content
+                        overall_analysis_placeholder = st.empty()
+                        recommendations_placeholder = st.empty()
+
+                        # Stream the partial responses.
+                        for partial_suggestions in suggestions_stream:
+                            current_suggestions = partial_suggestions
+
+                            # Update overall analysis
+                            if (
+                                hasattr(partial_suggestions, "overall_analysis")
+                                and partial_suggestions.overall_analysis
+                            ):
+                                overall_analysis_placeholder.write(
+                                    f"**Overall Analysis:** {partial_suggestions.overall_analysis}"
+                                )
+
+                            # Update recommendations
+                            if (
+                                hasattr(partial_suggestions, "recommendations")
+                                and partial_suggestions.recommendations
+                            ):
+                                with recommendations_placeholder.container():
+                                    st.write("**Column Pair Recommendations:**")
+                                    for i, rec in enumerate(partial_suggestions.recommendations):
+                                        if hasattr(rec, 'column1') and hasattr(rec, 'column2'):
+                                            priority_emoji = "🥇" if rec.priority == 1 else "🥈" if rec.priority == 2 else "🥉"
+                                            st.write(f"{priority_emoji} **Pair {i+1}:** {rec.column1} vs {rec.column2}")
+                                            if hasattr(rec, 'reasoning') and rec.reasoning:
+                                                st.write(f"   *Reasoning:* {rec.reasoning}")
+                                            if hasattr(rec, 'visualization_type') and rec.visualization_type:
+                                                st.write(f"   *Visualization:* {rec.visualization_type}")
+                                            st.write("")
+
+                        # Final suggestions received.
+                        if current_suggestions and hasattr(current_suggestions, 'recommendations') and current_suggestions.recommendations:
+                            st.success("✅ Analysis Complete!")
+
+                            # Add buttons to apply suggestions
+                            st.write("**Apply a recommendation:**")
+                            cols = st.columns(min(len(current_suggestions.recommendations), 3))
+                            
+                            for i, rec in enumerate(current_suggestions.recommendations[:3]):  # Show max 3 buttons
+                                with cols[i]:
+                                    priority_emoji = "🥇" if rec.priority == 1 else "🥈" if rec.priority == 2 else "🥉"
+                                    if st.button(
+                                        f"{priority_emoji} Apply Pair {i+1}", 
+                                        key=f"apply_suggestion_{i}_btn"
+                                    ):
+                                        if (
+                                            rec.column1 in app_state.numeric_cols
+                                            and rec.column2 in app_state.numeric_cols
+                                        ):
+                                            app_state.x_axis = rec.column1
+                                            app_state.y_axis = rec.column2
+                                            st.success(f"Applied: {rec.column1} vs {rec.column2}")
+                                            rerun_needed = True
+                                        else:
+                                            st.error("Suggested columns not found in dataset")
+                            
+                            # Clear button
+                            if st.button("Clear Suggestions", key="clear_suggestions_btn"):
+                                st.rerun()
+
+                except Exception as e:
+                    st.error(f"Failed to generate column suggestions: {e}")
+
+    elif not app_state.active_api_key_name:
+        st.info("Add an API key to use AI column comparison suggestions")
+    elif app_state.cleaned_df.empty:
+        st.info("Upload a CSV file to get column comparison suggestions")
+    elif len(app_state.numeric_cols) < 2:
+        st.info("Dataset needs at least 2 numeric columns for comparison suggestions")
+
+    return app_state, rerun_needed
+
+
 def render_pca_formulas_tab(app_state):
-    """
-    Renders the PCA formulas tab UI
-    """
+    """Renders the PCA formulas tab UI."""
     st.subheader("Principal Component Formulas")
     if app_state.pca_state.pca_object is not None and app_state.pca_state.pca_cols:
         pca_obj = app_state.pca_state.pca_object
@@ -252,7 +770,7 @@ def render_pca_formulas_tab(app_state):
 
         n_optimal = app_state.pca_state.min_components_95_variance
 
-        # Render latex formulas for optimal principal components
+        # Render latex formulas for optimal principal components.
         for comp_index in range(n_optimal):
             with st.expander(f"PC{comp_index + 1} Formula Details"):
                 st.write(f"PC{comp_index + 1} = ")
@@ -268,8 +786,8 @@ def render_pca_formulas_tab(app_state):
 
 
 def render_pca_tab(cleaned_df, numeric_cols, app_state):
-    # Renders PCA configuration UI and handles PCA processing
-    # Returns updated df, numeric_cols, and app_state
+    # Renders PCA configuration UI and handles PCA processing.
+    # Returns updated df, numeric_cols, and app_state.
     st.subheader("Principal Component Analysis")
     if numeric_cols:
         exclude_cols = st.multiselect(
@@ -297,14 +815,14 @@ def render_pca_tab(cleaned_df, numeric_cols, app_state):
         app_state.pca_state.explained_variance = explained_variance.tolist()
         app_state.pca_state.cumulative_variance = cumulative_variance.tolist()
 
-        # Determine number of optimal principal components to reach 95% variance
+        # Determine number of optimal principal components to reach 95% variance.
         min_components_95_variance = next(
             (i + 1 for i, v in enumerate(cumulative_variance) if v >= 0.95),
             len(cumulative_variance),
         )
         app_state.pca_state.min_components_95_variance = min_components_95_variance
 
-        # Append columns with optimal principal components to df
+        # Append columns with optimal principal components to df.
         for i in range(min_components_95_variance):
             col_name = f"PC{i + 1}"
             cleaned_df[col_name] = pca_components[:, i]
