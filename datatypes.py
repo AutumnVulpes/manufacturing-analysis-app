@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from pydantic import BaseModel
 from sklearn.decomposition import PCA
 import pandas as pd
 
@@ -51,3 +52,20 @@ class AppState:
     active_provider: str = "OpenRouter"
     generated_title: str = ""
     last_processed_filename: str = ""
+
+# Define Pydantic model for title suggestions
+class TitleSuggestion(BaseModel):
+    title: str
+
+# Define Pydantic model for a single column comparison pair
+class ColumnPair(BaseModel):
+    column1: str
+    column2: str
+    reasoning: str
+    visualization_type: str = "scatter"
+    priority: int = 1  # 1 = highest priority, 2 = medium, 3 = lowest
+
+# Define Pydantic model for multiple column comparison suggestions
+class ColumnComparisonSuggestions(BaseModel):
+    recommendations: list[ColumnPair]
+    overall_analysis: str
