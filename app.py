@@ -16,8 +16,8 @@ from impl import (
 )
 
 
-# Set explicit headless parameters for Chromium for streamlit cloud
-# Remove if only deploying locally
+# Set explicit headless parameters for Chromium for streamlit cloud.
+# Remove if only deploying locally.
 pio.kaleido.scope.chromium_args = (
     "--headless",
     "--no-sandbox",
@@ -34,7 +34,7 @@ pio.kaleido.scope.chromium_args = (
 load_css()
 st.set_page_config(layout="wide")
 
-# Initialize session state
+# Initialize session state.
 if "app_state" not in st.session_state:
     st.session_state.app_state = AppState(
         cleaned_df=pd.DataFrame(),
@@ -49,15 +49,17 @@ if "app_state" not in st.session_state:
             cumulative_variance=[],
             min_components_95_variance=0,
         ),
+        active_provider="",
+        active_api_key="",
         generated_title="",
         last_processed_filename="",
     )
 
 app_state = st.session_state.app_state
 
-# Set title conditionally
+# Set title conditionally.
 if app_state.generated_title:
-    st.title(f"{app_state.generated_title} Analysis Dashboard")
+    st.title(app_state.generated_title)
 else:
     st.title("Vulpes' Data Analysis Dashboard")
 
@@ -99,7 +101,7 @@ if uploaded_csv_file is not None:
                     app_state,
                 )
             )
-            
+
     with tab_ai:
         app_state, rerun_needed = render_ai_helper_tab(app_state, uploaded_csv_file)
         if rerun_needed:
