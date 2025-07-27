@@ -1,7 +1,7 @@
 import instructor
 from openai import OpenAI
-from models import SuggestionsResponse, ColumnSuggestion, TitleResponse, ChatMessage, RelevanceCheck, ValidatedResponse
-from typing import Dict, Any, Tuple, List
+import models
+from typing import Dict, Any, List
 import time
 import json
 import streamlit as st
@@ -127,7 +127,7 @@ Ensure all column names match exactly with the provided column list."""
 
     def get_column_suggestions(
         self, data_summary: Dict[str, Any], max_retries: int = 3
-    ) -> SuggestionsResponse:
+    ) -> models.ColumnSuggestions:
         """
         Get column pairing suggestions from the LLM with retry logic.
 
@@ -148,7 +148,7 @@ Ensure all column names match exactly with the provided column list."""
                 if self.use_instructor:
                     response = self.client.chat.completions.create(
                         model=self.model,
-                        response_model=SuggestionsResponse,
+                        response_model=models.ColumnSuggestions,
                         messages=[
                             {
                                 "role": "system",
@@ -173,7 +173,7 @@ Ensure all column names match exactly with the provided column list."""
                     ):
                         valid_suggestions.append(suggestion)
 
-                return SuggestionsResponse(
+                return models.ColumnSuggestions(
                     suggestions=valid_suggestions,
                     overall_analysis=response.overall_analysis,
                 )
@@ -190,7 +190,7 @@ Ensure all column names match exactly with the provided column list."""
 
         raise Exception("Unexpected error in retry loop")
 
-    def _get_openrouter_suggestions(self, prompt: str) -> SuggestionsResponse:
+    def _get_openrouter_suggestions(self, prompt: str) -> models.ColumnSuggestions:
         """
         Get suggestions from OpenRouter using regular chat completions.
 
@@ -221,14 +221,14 @@ Ensure all column names match exactly with the provided column list."""
             suggestions = []
             for item in data.get("suggestions", []):
                 suggestions.append(
-                    ColumnSuggestion(
+                    models.ColumnSuggestion(
                         column1_name=item.get("column1_name", ""),
                         column2_name=item.get("column2_name", ""),
                         reasoning=item.get("reasoning", ""),
                     )
                 )
 
-            return SuggestionsResponse(
+            return models.ColumnSuggestions(
                 suggestions=suggestions,
                 overall_analysis=data.get("overall_analysis", ""),
             )
@@ -237,7 +237,7 @@ Ensure all column names match exactly with the provided column list."""
             # Fallback: try to extract information from text.
             return self._parse_text_response(content)
 
-    def _parse_text_response(self, content: str) -> SuggestionsResponse:
+    def _parse_text_response(self, content: str) -> models.ColumnSuggestions:
         """
         Parse text response when JSON parsing fails.
 
@@ -257,7 +257,7 @@ Ensure all column names match exactly with the provided column list."""
 
         for i, (col1, col2, reasoning) in enumerate(matches[:5]):
             suggestions.append(
-                ColumnSuggestion(
+                models.ColumnSuggestion(
                     column1_name=col1.strip(),
                     column2_name=col2.strip(),
                     reasoning=reasoning.strip(),
@@ -272,7 +272,7 @@ Ensure all column names match exactly with the provided column list."""
                 overall_analysis = line.strip()
                 break
 
-        return SuggestionsResponse(
+        return models.ColumnSuggestions(
             suggestions=suggestions, overall_analysis=overall_analysis
         )
 
@@ -299,7 +299,7 @@ Ensure all column names match exactly with the provided column list."""
 
             response = self.client.chat.completions.create(
                 model=self.model,
-                response_model=TitleResponse,
+                response_model=models.TitleSuggestion,
                 messages=[
                     {
                         "role": "system",
@@ -361,8 +361,13 @@ Ensure all column names match exactly with the provided column list."""
             st.error(f"OpenRouter title generation failed: {e}")
             return ""
 
-    def _create_data_context(self, df: pd.DataFrame, numeric_cols: List[str], 
-                           pca_state=None, column_suggestions=None) -> str:
+    def _create_data_context(
+        self,
+        df: pd.DataFrame,
+        numeric_cols: List[str],
+        pca_state=None,
+        column_suggestions=None,
+    ) -> str:
         """
         Create data context for chat interactions.
 
@@ -380,14 +385,14 @@ CURRENT DATASET CONTEXT:
 - Total rows: {len(df)}
 - Total columns: {len(df.columns)}
 - Numeric columns: {len(numeric_cols)}
-- Column names: {', '.join(numeric_cols[:10])}{'...' if len(numeric_cols) > 10 else ''}
+- Column names: {", ".join(numeric_cols[:10])}{"..." if len(numeric_cols) > 10 else ""}
 
 BASIC STATISTICS:
 """
         # Add basic statistics for first few numeric columns
         for col in numeric_cols[:5]:
             if col in df.columns:
-                series = pd.to_numeric(df[col], errors='coerce').dropna()
+                series = pd.to_numeric(df[col], errors="coerce").dropna()
                 if len(series) > 0:
                     context += f"- {col}: mean={series.mean():.2f}, std={series.std():.2f}, range=[{series.min():.2f}, {series.max():.2f}]\n"
 
@@ -395,21 +400,23 @@ BASIC STATISTICS:
             context += f"""
 PCA ANALYSIS RESULTS:
 - Principal components generated: {pca_state.min_components_95_variance}
-- Columns used for PCA: {', '.join(pca_state.pca_cols)}
-- Explained variance by components: {[f'{v:.3f}' for v in pca_state.explained_variance[:3]]}
-- Cumulative variance (first 3 PCs): {[f'{v:.3f}' for v in pca_state.cumulative_variance[:3]]}
+- Columns used for PCA: {", ".join(pca_state.pca_cols)}
+- Explained variance by components: {[f"{v:.3f}" for v in pca_state.explained_variance[:3]]}
+- Cumulative variance (first 3 PCs): {[f"{v:.3f}" for v in pca_state.cumulative_variance[:3]]}
 """
 
-        if column_suggestions and hasattr(column_suggestions, 'suggestions'):
+        if column_suggestions and hasattr(column_suggestions, "suggestions"):
             context += f"""
 GENERATED COLUMN SUGGESTIONS:
 - Number of suggestions: {len(column_suggestions.suggestions)}
-- Suggested pairs: {', '.join([f'({s.column1_name}, {s.column2_name})' for s in column_suggestions.suggestions[:3]])}
+- Suggested pairs: {", ".join([f"({s.column1_name}, {s.column2_name})" for s in column_suggestions.suggestions[:3]])}
 """
 
         return context
 
-    def _check_question_relevance(self, user_message: str) -> RelevanceCheck:
+    def _check_question_relevance(
+        self, user_message: str
+    ) -> models.IsChatQueryRelevant:
         """
         Check if the user's question is relevant to data engineering/analysis.
 
@@ -423,7 +430,7 @@ GENERATED COLUMN SUGGESTIONS:
             if self.use_instructor:
                 response = self.client.chat.completions.create(
                     model=self.model,
-                    response_model=RelevanceCheck,
+                    response_model=models.IsChatQueryRelevant,
                     messages=[
                         {
                             "role": "system",
@@ -449,9 +456,12 @@ A question is NOT data-related (or doesn't need data context) if it asks about:
 - Programming languages unrelated to data analysis
 - Any topic completely unrelated to data or analytics
 
-Be strict: only return true if the question specifically needs information about the current dataset."""
+Be strict: only return true if the question specifically needs information about the current dataset.""",
                         },
-                        {"role": "user", "content": f"Does this question need information about the current dataset: '{user_message}'"}
+                        {
+                            "role": "user",
+                            "content": f"Does this question need information about the current dataset: '{user_message}'",
+                        },
                     ],
                     temperature=0.1,
                     max_tokens=200,
@@ -460,34 +470,53 @@ Be strict: only return true if the question specifically needs information about
             else:
                 # For OpenRouter, use a more specific heuristic
                 dataset_keywords = [
-                    'this data', 'dataset', 'columns', 'my data', 'current data',
-                    'correlation', 'pattern', 'trend', 'outlier', 'distribution',
-                    'pca', 'component', 'insight', 'analysis', 'visualization'
+                    "this data",
+                    "dataset",
+                    "columns",
+                    "my data",
+                    "current data",
+                    "correlation",
+                    "pattern",
+                    "trend",
+                    "outlier",
+                    "distribution",
+                    "pca",
+                    "component",
+                    "insight",
+                    "analysis",
+                    "visualization",
                 ]
-                
+
                 # Questions about the chatbot itself
                 chatbot_keywords = [
-                    'are you', 'what are you', 'who are you', 'how do you work',
-                    'what can you do', 'your capabilities', 'human or robot'
+                    "are you",
+                    "what are you",
+                    "who are you",
+                    "how do you work",
+                    "what can you do",
+                    "your capabilities",
+                    "human or robot",
                 ]
-                
+
                 message_lower = user_message.lower()
-                
+
                 # If it's asking about the chatbot, don't treat as needing data context.
                 if any(keyword in message_lower for keyword in chatbot_keywords):
                     is_data_related = False
                 else:
-                    is_data_related = any(keyword in message_lower for keyword in dataset_keywords)
-                
-                return RelevanceCheck(
+                    is_data_related = any(
+                        keyword in message_lower for keyword in dataset_keywords
+                    )
+
+                return models.IsChatQueryRelevant(
                     is_data_related=is_data_related,
-                    reasoning="Enhanced keyword-based check for OpenRouter"
+                    reasoning="Enhanced keyword-based check for OpenRouter",
                 )
         except Exception:
             # Default to treating as data-related if check fails.
-            return RelevanceCheck(
+            return models.IsChatQueryRelevant(
                 is_data_related=True,
-                reasoning="Relevance check failed, defaulting to data-related"
+                reasoning="Relevance check failed, defaulting to data-related",
             )
 
     def _create_data_engineer_system_prompt(self) -> str:
@@ -514,8 +543,9 @@ Guidelines:
 
 Remember: The user has data context available, but only provide it when specifically relevant to their exact question."""
 
-
-    def _validate_response(self, response: str, user_message: str) -> ValidatedResponse:
+    def _validate_response(
+        self, response: str, user_message: str
+    ) -> models.IsChatResponseValid:
         """
         Validate that the response is concise and addresses the user's question.
 
@@ -530,7 +560,7 @@ Remember: The user has data context available, but only provide it when specific
             if self.use_instructor:
                 validation = self.client.chat.completions.create(
                     model=self.model,
-                    response_model=ValidatedResponse,
+                    response_model=models.IsChatResponseValid,
                     messages=[
                         {
                             "role": "system",
@@ -541,12 +571,12 @@ Evaluate if the response:
 2. Directly addresses the user's question
 3. Doesn't force unrelated topics into the answer
 
-A good response should be focused, relevant, and appropriately sized for the question asked."""
+A good response should be focused, relevant, and appropriately sized for the question asked.""",
                         },
                         {
-                            "role": "user", 
-                            "content": f"User asked: '{user_message}'\n\nAI responded: '{response}'\n\nIs this response concise and does it address the question?"
-                        }
+                            "role": "user",
+                            "content": f"User asked: '{user_message}'\n\nAI responded: '{response}'\n\nIs this response concise and does it address the question?",
+                        },
                     ],
                     temperature=0.1,
                     max_tokens=300,
@@ -555,23 +585,26 @@ A good response should be focused, relevant, and appropriately sized for the que
             else:
                 is_concise = len(response.split()) < 200  # Less than 200 words.
                 addresses_question = len(response) > 10  # At least some content.
-                
-                return ValidatedResponse(
+
+                return models.IsChatResponseValid(
                     response=response,
                     is_concise=is_concise,
-                    addresses_question=addresses_question
+                    addresses_question=addresses_question,
                 )
         except Exception:
-            return ValidatedResponse(
-                response=response,
-                is_concise=True,
-                addresses_question=True
+            return models.IsChatResponseValid(
+                response=response, is_concise=True, addresses_question=True
             )
 
-
-    def stream_data_insights(self, user_message: str, chat_history: List[ChatMessage],
-                           df: pd.DataFrame, numeric_cols: List[str], 
-                           pca_state=None, column_suggestions=None):
+    def stream_data_insights(
+        self,
+        user_message: str,
+        chat_history: List[models.ChatMessage],
+        df: pd.DataFrame,
+        numeric_cols: List[str],
+        pca_state=None,
+        column_suggestions=None,
+    ):
         """
         Stream data insights response for real-time chat experience with relevance checking.
 
@@ -588,48 +621,69 @@ A good response should be focused, relevant, and appropriately sized for the que
         """
         try:
             relevance_check = self._check_question_relevance(user_message)
-            
+
             if not relevance_check.is_data_related:
-                rejection_msg = "Sorry, I don't think that's relevant to analyzing this data!"
+                rejection_msg = (
+                    "Sorry, I don't think that's relevant to analyzing this data!"
+                )
                 yield rejection_msg
                 return rejection_msg
-            
+
             system_prompt = self._create_data_engineer_system_prompt()
             messages = [{"role": "system", "content": system_prompt}]
-            
+
             # Only add data context if the question specifically needs dataset information.
             message_lower = user_message.lower()
-            needs_data_context = any(keyword in message_lower for keyword in [
-                'dataset', 'data', 'columns', 'statistics', 'pca', 'correlation', 
-                'pattern', 'trend', 'analysis', 'insight', 'visualization'
-            ])
-            
+            needs_data_context = any(
+                keyword in message_lower
+                for keyword in [
+                    "dataset",
+                    "data",
+                    "columns",
+                    "statistics",
+                    "pca",
+                    "correlation",
+                    "pattern",
+                    "trend",
+                    "analysis",
+                    "insight",
+                    "visualization",
+                ]
+            )
+
             if needs_data_context:
-                data_context = self._create_data_context(df, numeric_cols, pca_state, column_suggestions)
-                messages.append({"role": "system", "content": f"CURRENT DATA CONTEXT:\n{data_context}"})
-            
+                data_context = self._create_data_context(
+                    df, numeric_cols, pca_state, column_suggestions
+                )
+                messages.append(
+                    {
+                        "role": "system",
+                        "content": f"CURRENT DATA CONTEXT:\n{data_context}",
+                    }
+                )
+
             for msg in chat_history[-5:]:
                 messages.append({"role": msg.role, "content": msg.content})
-            
+
             messages.append({"role": "user", "content": user_message})
 
             stream = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 temperature=0.3,  # Lower temperature for more focused responses
-                max_tokens=400,   # Reduced for more concise responses
-                stream=True
+                max_tokens=400,  # Reduced for more concise responses
+                stream=True,
             )
-            
+
             full_response = ""
             for chunk in stream:
                 if chunk.choices[0].delta.content is not None:
                     content = chunk.choices[0].delta.content
                     full_response += content
                     yield content
-            
+
             return full_response
-            
+
         except Exception as e:
             error_msg = f"Error getting insights: {str(e)}"
             yield error_msg
