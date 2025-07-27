@@ -454,14 +454,19 @@ def render_ai_helper_tab(app_state: AppState, uploaded_csv_file):
             st.info("📊 Please upload a CSV file to start asking questions about your data.")
             return app_state, rerun_needed
         
+        # Clear chat button
         if st.button("🗑️ Clear Chat", key="clear_chat_btn"):
             app_state.chat_history = []
             st.rerun()
         
-        for message in app_state.chat_history:
-            with st.chat_message(message.role):
-                st.write(message.content)
+        # Chat container - single block for all messages
+        with st.container():
+            # Display all chat messages in sequence
+            for message in app_state.chat_history:
+                with st.chat_message(message.role):
+                    st.write(message.content)
         
+        # Chat input at the bottom
         if prompt := st.chat_input("Ask me anything about your data...", key="data_chat_input"):
             user_message = ChatMessage(
                 role="user",
@@ -470,25 +475,22 @@ def render_ai_helper_tab(app_state: AppState, uploaded_csv_file):
             )
             app_state.chat_history.append(user_message)
             
+            # Process assistant response and add to history
             try:
                 llm_client = LLMClient(app_state.active_provider, app_state.active_api_key)
                 
                 column_suggestions = getattr(st.session_state, 'column_suggestions', None)
                 
-                # Create generator function for st.write_stream
-                def response_generator():
-                    for chunk in llm_client.stream_data_insights(
-                        prompt, 
-                        app_state.chat_history[:-1],  # Exclude the current user message.
-                        app_state.cleaned_df,
-                        app_state.numeric_cols,
-                        app_state.pca_state,
-                        column_suggestions
-                    ):
-                        yield chunk
-                
+                # Get complete response without streaming
                 full_response = ""
-                for chunk in response_generator():
+                for chunk in llm_client.stream_data_insights(
+                    prompt, 
+                    app_state.chat_history[:-1],  # Exclude the current user message.
+                    app_state.cleaned_df,
+                    app_state.numeric_cols,
+                    app_state.pca_state,
+                    column_suggestions
+                ):
                     full_response += chunk
                 
                 if full_response:
@@ -499,8 +501,6 @@ def render_ai_helper_tab(app_state: AppState, uploaded_csv_file):
                     )
                     app_state.chat_history.append(assistant_message)
                 
-                st.rerun()
-                
             except Exception as e:
                 error_msg = f"Sorry, I encountered an error: {str(e)}"
                 
@@ -510,8 +510,9 @@ def render_ai_helper_tab(app_state: AppState, uploaded_csv_file):
                     timestamp=datetime.now()
                 )
                 app_state.chat_history.append(error_message)
-                
-                st.rerun()
+            
+            # Rerun to display the updated chat history
+            st.rerun()
 
     return app_state, rerun_needed
 
