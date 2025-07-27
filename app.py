@@ -53,6 +53,7 @@ if "app_state" not in st.session_state:
         active_api_key="",
         generated_title="",
         last_processed_filename="",
+        chat_history=[],
     )
 
 app_state = st.session_state.app_state
@@ -81,7 +82,7 @@ if uploaded_csv_file is not None:
 
     with left_col:
         tab_pca, tab_pca_formulas, tab_viz, tab_ai = st.tabs(
-            ["PCA Config", "PCA Formulas", "Visualization Config", "AI Helper"]
+            ["PCA Config", "PCA Formulas", "Visualization Config", "AI Data Assistant"]
         )
         with tab_pca:
             app_state.cleaned_df, app_state.numeric_cols, app_state = render_pca_tab(
@@ -92,7 +93,7 @@ if uploaded_csv_file is not None:
             render_pca_formulas_tab(app_state)
 
         with tab_viz:
-            app_state.filtered_df, app_state.x_axis, app_state.y_axis, app_state = (
+            app_state.filtered_df, app_state.x_axis, app_state.y_axis, _ = (
                 render_viz_config_tab(
                     app_state.cleaned_df,
                     app_state.numeric_cols,
@@ -102,10 +103,11 @@ if uploaded_csv_file is not None:
                 )
             )
 
-    with tab_ai:
-        app_state, rerun_needed = render_ai_helper_tab(app_state, uploaded_csv_file)
-        if rerun_needed:
-            st.rerun()
+        with tab_ai:
+            app_state, rerun_needed = render_ai_helper_tab(app_state, uploaded_csv_file)
+            if rerun_needed:
+                st.rerun()
+
 
     with right_col:
         tab_scatter, tab_scree, tab_cumulative_variance = st.tabs(

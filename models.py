@@ -1,5 +1,6 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List
+from datetime import datetime
 
 
 class ColumnSuggestion(BaseModel):
@@ -62,3 +63,53 @@ class TitleResponse(BaseModel):
     title: str = Field(
         description="A concise, professional 3-4 word title that implies the tool's purpose for analyzing the data"
     )
+
+
+class ChatMessage(BaseModel):
+    """
+    Model for a single chat message in the data insights chatbox.
+
+    Attributes:
+        role: Role of the message sender (user, assistant, or system)
+        content: Content of the message
+        timestamp: When the message was created
+    """
+
+    role: str = Field(..., description="Role of the message sender")
+    content: str = Field(..., description="Content of the message")
+    timestamp: datetime = Field(default_factory=datetime.now)
+
+    @field_validator('role')
+    @classmethod
+    def validate_role(cls, v):
+        if v not in ['user', 'assistant', 'system']:
+            raise ValueError('Role must be user, assistant, or system')
+        return v
+
+
+class RelevanceCheck(BaseModel):
+    """
+    Model for checking if a user question is relevant to data engineering/analysis.
+
+    Attributes:
+        is_data_related: Whether the question is related to data analysis, engineering, or the current dataset
+        reasoning: Brief explanation of why it is or isn't data-related
+    """
+
+    is_data_related: bool = Field(..., description="True if question is related to data analysis, engineering, or the current dataset")
+    reasoning: str = Field(..., description="Brief explanation of why it is or isn't data-related")
+
+
+class ValidatedResponse(BaseModel):
+    """
+    Model for validating that responses are concise and appropriate.
+
+    Attributes:
+        response: The validated response text
+        is_concise: Whether the response is concise and to the point
+        addresses_question: Whether the response directly addresses the user's question
+    """
+
+    response: str = Field(..., description="The validated response text")
+    is_concise: bool = Field(..., description="Whether the response is concise and to the point")
+    addresses_question: bool = Field(..., description="Whether the response directly addresses the user's question")

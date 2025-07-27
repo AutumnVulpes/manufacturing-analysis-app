@@ -1,7 +1,10 @@
 from dataclasses import dataclass, field
-from pydantic import BaseModel
 from sklearn.decomposition import PCA
 import pandas as pd
+from typing import List, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from models import ChatMessage
 
 
 @dataclass
@@ -50,3 +53,4 @@ class AppState:
     active_api_key: str = ""
     generated_title: str = ""
     last_processed_filename: str = ""
+    chat_history: List["ChatMessage"] = field(default_factory=list)
