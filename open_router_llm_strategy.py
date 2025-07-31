@@ -144,31 +144,56 @@ class OpenRouterLLMStrategy(LLMStrategyInterface):
             return ""
 
     def check_question_relevance(self, user_message: str) -> models.IsChatQueryRelevant:
-        """Check question relevance using heuristic approach for OpenRouter."""
+        """Check question relevance using LLM-based reasoning for OpenRouter."""
         try:
-            # For OpenRouter, use a more specific heuristic
-            dataset_keywords = prompts.DATASET_KEYWORDS
-            chatbot_keywords = prompts.CHATBOT_KEYWORDS
+            # Simple, direct prompt that forces the model to end with true/false
+            openrouter_relevance_prompt = f"""Analyze this question: "{user_message}"
 
-            message_lower = user_message.lower()
+Is this question about data analysis, datasets, or data science concepts?
 
-            # If it's asking about the chatbot, don't treat as needing data context
-            if any(keyword in message_lower for keyword in chatbot_keywords):
-                is_data_related = False
+Provide brief reasoning, then end your response with exactly one word: true or false
+
+Your response must end with: true or false"""
+
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "user", "content": openrouter_relevance_prompt}
+                ],
+                temperature=0.0,  # Zero temperature for consistency
+                max_tokens=100,
+            )
+
+            content = response.choices[0].message.content.strip()
+            
+            # Debug: Print the actual response
+            print(f"DEBUG - OpenRouter response: '{content}'")
+            
+            # Extract the final word and check if it's true/false
+            words = content.split()
+            if words:
+                final_word = words[-1].lower().rstrip('.,!?')
+                is_data_related = final_word == "true"
+                
+                # Extract reasoning (everything except the final word)
+                reasoning = " ".join(words[:-1]) if len(words) > 1 else "LLM analysis"
             else:
-                is_data_related = any(
-                    keyword in message_lower for keyword in dataset_keywords
-                )
-
+                # Fallback if no words found
+                is_data_related = True
+                reasoning = "Empty response, defaulting to data-related"
+            
+            print(f"DEBUG - Final word: '{final_word}', Decision: {is_data_related}")
+            
             return models.IsChatQueryRelevant(
                 is_data_related=is_data_related,
-                reasoning="Enhanced keyword-based check for OpenRouter",
+                reasoning=reasoning[:200],
             )
-        except Exception:
-            # Default to treating as data-related if check fails
+            
+        except Exception as e:
+            print(f"DEBUG - Exception: {e}")
             return models.IsChatQueryRelevant(
                 is_data_related=True,
-                reasoning="Relevance check failed, defaulting to data-related",
+                reasoning=f"Error occurred, defaulting to data-related: {str(e)}",
             )
 
     def validate_response(

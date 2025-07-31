@@ -188,10 +188,14 @@ GENERATED COLUMN SUGGESTIONS:
             messages = [{"role": "system", "content": system_prompt}]
 
             # Only add data context if the question specifically needs dataset information
+            # Use a simple heuristic to determine if data context is needed
             message_lower = user_message.lower()
-            needs_data_context = any(
-                keyword in message_lower for keyword in prompts.DATA_CONTEXT_KEYWORDS
-            )
+            data_related_terms = [
+                "dataset", "data", "columns", "statistics", "pca", "correlation", 
+                "pattern", "trend", "analysis", "insight", "visualization", "rows",
+                "values", "distribution", "mean", "std", "variance", "component"
+            ]
+            needs_data_context = any(term in message_lower for term in data_related_terms)
 
             if needs_data_context:
                 data_context = self._create_data_context(
