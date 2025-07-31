@@ -90,3 +90,10 @@ class IsChatResponseValid(BaseModel):
     addresses_question: bool = Field(
         ..., description="Whether the response directly addresses the user's question"
     )
+
+
+class ChatStreamResponse(BaseModel):
+    """Model for streaming chat responses."""
+
+    content: str = Field(..., description="The chat response content")
+    is_complete: bool = Field(default=False, description="Whether the response is complete")

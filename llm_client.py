@@ -174,16 +174,25 @@ GENERATED COLUMN SUGGESTIONS:
         Yields:
             Response chunks for streaming
         """
+        print(f"[DEBUG] LLMClient.stream_data_insights called with user_message: {user_message}")
+        print(f"[DEBUG] Chat history length: {len(chat_history)}")
+        print(f"[DEBUG] DataFrame shape: {df.shape}")
+        print(f"[DEBUG] Numeric columns: {numeric_cols}")
+        
         try:
+            print(f"[DEBUG] Checking question relevance...")
             relevance_check = self._strategy.check_question_relevance(user_message)
+            print(f"[DEBUG] Relevance check result: {relevance_check.is_data_related}, reasoning: {relevance_check.reasoning}")
 
             if not relevance_check.is_data_related:
                 rejection_msg = (
                     "Sorry, I don't think that's relevant to analyzing this data!"
                 )
+                print(f"[DEBUG] Question not relevant, yielding rejection: {rejection_msg}")
                 yield rejection_msg
                 return rejection_msg
 
+            print(f"[DEBUG] Question is relevant, proceeding with response generation...")
             system_prompt = prompts.DATA_ENGINEER_SYSTEM_PROMPT
             messages = [{"role": "system", "content": system_prompt}]
 
@@ -196,11 +205,13 @@ GENERATED COLUMN SUGGESTIONS:
                 "values", "distribution", "mean", "std", "variance", "component"
             ]
             needs_data_context = any(term in message_lower for term in data_related_terms)
+            print(f"[DEBUG] Needs data context: {needs_data_context}")
 
             if needs_data_context:
                 data_context = self._create_data_context(
                     df, numeric_cols, pca_state, column_suggestions
                 )
+                print(f"[DEBUG] Created data context: {data_context[:200]}...")
                 messages.append(
                     {
                         "role": "system",
@@ -212,16 +223,26 @@ GENERATED COLUMN SUGGESTIONS:
                 messages.append({"role": msg.role, "content": msg.content})
 
             messages.append({"role": "user", "content": user_message})
+            
+            print(f"[DEBUG] Final messages array has {len(messages)} messages")
+            print(f"[DEBUG] Calling strategy.stream_data_insights...")
 
             # Delegate to strategy
             full_response = ""
+            chunk_count = 0
             for content in self._strategy.stream_data_insights(messages):
+                chunk_count += 1
+                print(f"[DEBUG] LLMClient received chunk {chunk_count}: {content}")
                 full_response += content
                 yield content
 
+            print(f"[DEBUG] LLMClient streaming completed. Total chunks: {chunk_count}")
+            print(f"[DEBUG] LLMClient full response: {full_response}")
             return full_response
 
         except Exception as e:
             error_msg = f"Error getting insights: {str(e)}"
+            print(f"[ERROR] LLMClient exception: {error_msg}")
+            print(f"[ERROR] Exception type: {type(e)}")
             yield error_msg
             return error_msg
