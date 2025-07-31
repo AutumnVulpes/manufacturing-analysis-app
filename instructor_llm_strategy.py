@@ -27,13 +27,15 @@ class InstructorLLMStrategy(LLMStrategyInterface):
     def __init__(self, provider: str, api_key: str):
         """Initialize Instructor strategy."""
         super().__init__(provider, api_key)
-        openai_client = OpenAI(
+        # Raw client for streaming
+        self.raw_client = OpenAI(
             base_url=self.base_url,
             api_key=api_key,
             default_headers=self.default_headers,
         )
+        # Instructor client for structured operations
         self.client = instructor.from_openai(
-            openai_client, mode=instructor.Mode.JSON
+            self.raw_client, mode=instructor.Mode.JSON
         )
 
     def _calculate_backoff_delay(self, attempt: int, base_delay: float = 1.0, max_delay: float = 60.0) -> float:
@@ -269,44 +271,72 @@ class InstructorLLMStrategy(LLMStrategyInterface):
         messages: List[Dict[str, str]],
         **kwargs
     ):
-        """Stream data insights using instructor with retry logic for rate limits."""
-        max_retries = 3
+        """Stream data insights using hybrid approach: raw streaming + instructor validation."""
+        print(f"[DEBUG] Starting hybrid stream_data_insights with {len(messages)} messages")
+        print(f"[DEBUG] Messages: {messages}")
         
-        for attempt in range(max_retries + 1):
-            try:
-                stream = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    temperature=0.3,  # Lower temperature for more focused responses
-                    max_tokens=400,  # Reduced for more concise responses
-                    stream=True,
-                )
+        def _make_streaming_request():
+            print(f"[DEBUG] Making raw streaming request to model: {self.model}")
+            # Use raw OpenAI client for true streaming
+            return self.raw_client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.3,  # Lower temperature for more focused responses
+                max_tokens=400,  # Reduced for more concise responses
+                stream=True,
+            )
 
-                full_response = ""
-                for chunk in stream:
-                    if chunk.choices[0].delta.content is not None:
-                        content = chunk.choices[0].delta.content
-                        full_response += content
-                        yield content
-
-                return full_response
-
-            except Exception as e:
-                error_str = str(e)
-                is_rate_limit = "429" in error_str
+        try:
+            # Use existing retry logic for streaming
+            print(f"[DEBUG] Calling _retry_with_backoff for raw streaming request")
+            stream = self._retry_with_backoff(
+                _make_streaming_request,
+                max_retries=3,
+                operation_name="chat streaming"
+            )
+            
+            print(f"[DEBUG] Got raw stream object: {type(stream)}")
+            
+            # Step 1: Collect streaming chunks and yield them in real-time
+            full_content = ""
+            chunk_count = 0
+            
+            for chunk in stream:
+                chunk_count += 1
+                print(f"[DEBUG] Processing raw chunk {chunk_count}: {type(chunk)}")
                 
-                if attempt < max_retries:
-                    delay = self._calculate_backoff_delay(attempt)
-                    print(f"[RETRY] Chat streaming failed (attempt {attempt + 1}/{max_retries + 1}). Error: {error_str[:100]}...")
-                    print(f"[RETRY] Waiting {delay:.1f} seconds before retry...")
-                    time.sleep(delay)
-                    continue
+                # Extract content from OpenAI streaming format
+                if hasattr(chunk, 'choices') and len(chunk.choices) > 0:
+                    delta = chunk.choices[0].delta
+                    if hasattr(delta, 'content') and delta.content:
+                        content = delta.content
+                        print(f"[DEBUG] Got streaming content: {content}")
+                        full_content += content
+                        yield content
                 else:
-                    print(f"[ERROR] Chat streaming failed after {max_retries + 1} attempts. Final error: {error_str}")
-                    error_msg = f"Error getting insights: {error_str}"
-                    yield error_msg
-                    return error_msg
-        
-        # Should not reach here, but just in case
-        yield "Unexpected error in retry loop"
-        return "Unexpected error in retry loop"
+                    print(f"[DEBUG] No content in chunk or no choices")
+            
+            print(f"[DEBUG] Raw streaming completed. Total chunks: {chunk_count}")
+            print(f"[DEBUG] Full content length: {len(full_content)}")
+            print(f"[DEBUG] Full content: {full_content}")
+            
+            # Step 2: Validate complete response with instructor (post-processing)
+            try:
+                print(f"[DEBUG] Validating complete response with instructor...")
+                validated_response = models.ChatStreamResponse(content=full_content)
+                print(f"[DEBUG] Response validation successful")
+                return validated_response.content
+            except Exception as validation_error:
+                # If validation fails, return raw content with warning
+                print(f"[WARNING] Response validation failed: {validation_error}")
+                print(f"[WARNING] Returning raw content without validation")
+                return full_content
+
+        except Exception as e:
+            error_str = str(e)
+            print(f"[ERROR] Hybrid streaming failed: {error_str}")
+            print(f"[ERROR] Exception type: {type(e)}")
+            print(f"[ERROR] Exception details: {e}")
+            error_msg = f"Error getting insights: {error_str}"
+            yield error_msg
+            return error_msg

@@ -468,21 +468,27 @@ def render_ai_helper_tab(app_state: AppState, uploaded_csv_file):
         
         # Chat input at the bottom
         if prompt := st.chat_input("Ask me anything about your data...", key="data_chat_input"):
+            print(f"[DEBUG] UI: User submitted prompt: {prompt}")
             user_message = ChatMessage(
                 role="user",
                 content=prompt,
                 timestamp=datetime.now()
             )
             app_state.chat_history.append(user_message)
+            print(f"[DEBUG] UI: Added user message to chat history. Total messages: {len(app_state.chat_history)}")
             
             # Process assistant response and add to history
             try:
+                print(f"[DEBUG] UI: Creating LLMClient with provider: {app_state.active_provider}")
                 llm_client = LLMClient(app_state.active_provider, app_state.active_api_key)
                 
                 column_suggestions = getattr(st.session_state, 'column_suggestions', None)
+                print(f"[DEBUG] UI: Column suggestions available: {column_suggestions is not None}")
                 
                 # Get complete response without streaming
+                print(f"[DEBUG] UI: Starting to collect streaming response...")
                 full_response = ""
+                chunk_count = 0
                 for chunk in llm_client.stream_data_insights(
                     prompt, 
                     app_state.chat_history[:-1],  # Exclude the current user message.
@@ -491,7 +497,13 @@ def render_ai_helper_tab(app_state: AppState, uploaded_csv_file):
                     app_state.pca_state,
                     column_suggestions
                 ):
+                    chunk_count += 1
+                    print(f"[DEBUG] UI: Received chunk {chunk_count}: {chunk}")
                     full_response += chunk
+                
+                print(f"[DEBUG] UI: Streaming completed. Total chunks: {chunk_count}")
+                print(f"[DEBUG] UI: Full response length: {len(full_response)}")
+                print(f"[DEBUG] UI: Full response: {full_response}")
                 
                 if full_response:
                     assistant_message = ChatMessage(
@@ -500,9 +512,14 @@ def render_ai_helper_tab(app_state: AppState, uploaded_csv_file):
                         timestamp=datetime.now()
                     )
                     app_state.chat_history.append(assistant_message)
+                    print(f"[DEBUG] UI: Added assistant message to chat history. Total messages: {len(app_state.chat_history)}")
+                else:
+                    print(f"[DEBUG] UI: No response received from LLM")
                 
             except Exception as e:
                 error_msg = f"Sorry, I encountered an error: {str(e)}"
+                print(f"[ERROR] UI: Exception occurred: {error_msg}")
+                print(f"[ERROR] UI: Exception type: {type(e)}")
                 
                 error_message = ChatMessage(
                     role="assistant",
@@ -512,6 +529,7 @@ def render_ai_helper_tab(app_state: AppState, uploaded_csv_file):
                 app_state.chat_history.append(error_message)
             
             # Rerun to display the updated chat history
+            print(f"[DEBUG] UI: Calling st.rerun() to refresh chat display")
             st.rerun()
 
     return app_state, rerun_needed
