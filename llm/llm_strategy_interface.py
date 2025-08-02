@@ -7,8 +7,9 @@ a consistent interface.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Generator
 import models
+
 
 class LLMStrategyInterface(ABC):
     """Abstract base class for LLM provider strategies."""
@@ -96,10 +97,8 @@ class LLMStrategyInterface(ABC):
 
     @abstractmethod
     def stream_data_insights(
-        self,
-        messages: List[Dict[str, str]],
-        **kwargs
-    ):
+        self, messages: List[Dict[str, str]], **kwargs
+    ) -> Generator[str, None, str]:
         """
         Stream data insights response for real-time chat experience.
 
@@ -108,6 +107,9 @@ class LLMStrategyInterface(ABC):
             **kwargs: Additional parameters for streaming
 
         Yields:
-            Response chunks for streaming
+            str: Response chunks for streaming
+
+        Returns:
+            str: Final complete response
         """
         pass

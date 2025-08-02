@@ -91,8 +91,11 @@ OPENROUTER_TITLE_GENERATION_SYSTEM_PROMPT = (
 
 
 # =================================================================================================
-# Data Context Template
+# Data Context Templates and Functions
 # =================================================================================================
+
+import pandas as pd
+from typing import List, Optional, Any
 
 DATA_CONTEXT_TEMPLATE = """
 CURRENT DATASET CONTEXT:
@@ -103,11 +106,7 @@ CURRENT DATASET CONTEXT:
 
 BASIC STATISTICS:
 {basic_statistics}
-
-{pca_results}
-
-{column_suggestions_info}
-"""
+{pca_results}{column_suggestions_info}"""
 
 PCA_RESULTS_TEMPLATE = """
 PCA ANALYSIS RESULTS:
@@ -122,6 +121,114 @@ GENERATED COLUMN SUGGESTIONS:
 - Number of suggestions: {suggestions_count}
 - Suggested pairs: {suggested_pairs}
 """
+
+
+def create_column_suggestion_prompt(data_summary: dict) -> str:
+    """
+    Create a prompt for the LLM to suggest column pairings.
+
+    Parameters
+    ----------
+    data_summary : dict
+        Dictionary containing data information including statistics,
+        column names, and sample data
+
+    Returns
+    -------
+    str
+        Formatted prompt string ready for LLM consumption
+    """
+    import json
+
+    # Build column statistics string
+    column_statistics = ""
+    for stat in data_summary["statistics"]:
+        column_statistics += f"- {stat['column']}: mean={stat['mean']:.2f}, std={stat['std']:.2f}, range=[{stat['min']:.2f}, {stat['max']:.2f}]\n"
+
+    # Format the prompt using the template
+    prompt = COLUMN_SUGGESTION_BASE_PROMPT.format(
+        total_rows=data_summary["total_rows"],
+        total_columns=data_summary["total_columns"],
+        column_names=", ".join(data_summary["column_names"]),
+        column_statistics=column_statistics,
+        sample_data=json.dumps(data_summary["sample_data"], indent=2),
+    )
+
+    return prompt
+
+
+def create_data_context(
+    df: pd.DataFrame,
+    numeric_cols: List[str],
+    pca_state: Optional[Any] = None,
+    column_suggestions: Optional[Any] = None,
+) -> str:
+    """
+    Create data context for chat interactions.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Current dataframe containing the dataset
+    numeric_cols : List[str]
+        List of numeric column names
+    pca_state : Optional[Any], default=None
+        PCA state object if PCA analysis has been performed
+    column_suggestions : Optional[Any], default=None
+        Column suggestions object if suggestions have been generated
+
+    Returns
+    -------
+    str
+        Formatted data context string for LLM consumption
+    """
+    # Build basic statistics
+    basic_statistics = ""
+    for col in numeric_cols[:5]:
+        if col in df.columns:
+            series = pd.to_numeric(df[col], errors="coerce").dropna()
+            if len(series) > 0:
+                basic_statistics += f"- {col}: mean={series.mean():.2f}, std={series.std():.2f}, range=[{series.min():.2f}, {series.max():.2f}]\n"
+
+    # Build PCA results section
+    pca_results = ""
+    if pca_state and pca_state.pca_object is not None:
+        pca_results = PCA_RESULTS_TEMPLATE.format(
+            min_components_95_variance=pca_state.min_components_95_variance,
+            pca_cols=", ".join(pca_state.pca_cols),
+            explained_variance=[f"{v:.3f}" for v in pca_state.explained_variance[:3]],
+            cumulative_variance=[f"{v:.3f}" for v in pca_state.cumulative_variance[:3]],
+        )
+
+    # Build column suggestions section
+    column_suggestions_info = ""
+    if column_suggestions and hasattr(column_suggestions, "suggestions"):
+        suggested_pairs = ", ".join(
+            [
+                f"({s.column1_name}, {s.column2_name})"
+                for s in column_suggestions.suggestions[:3]
+            ]
+        )
+        column_suggestions_info = COLUMN_SUGGESTIONS_INFO_TEMPLATE.format(
+            suggestions_count=len(column_suggestions.suggestions),
+            suggested_pairs=suggested_pairs,
+        )
+
+    # Build column names display
+    column_names_display = ", ".join(numeric_cols[:10])
+    if len(numeric_cols) > 10:
+        column_names_display += "..."
+
+    # Use the template to build the complete context
+    return DATA_CONTEXT_TEMPLATE.format(
+        total_rows=len(df),
+        total_columns=len(df.columns),
+        numeric_columns_count=len(numeric_cols),
+        column_names=column_names_display,
+        basic_statistics=basic_statistics,
+        pca_results=pca_results,
+        column_suggestions_info=column_suggestions_info,
+    )
 
 
 # =================================================================================================
