@@ -9,18 +9,38 @@ from openai import OpenAI
 import json
 import re
 import streamlit as st
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Generator
 
-from llm_strategy_interface import LLMStrategyInterface
+from .llm_strategy_interface import LLMStrategyInterface
 import models
-import prompts
+from . import prompts
+from .retry_config import (
+    retry_column_suggestions,
+    retry_title_generation,
+    retry_chat_operations,
+    retry_validation_operations,
+)
 
 
 class OpenRouterLLMStrategy(LLMStrategyInterface):
-    """Strategy implementation for OpenRouter providers."""
+    """
+    Strategy implementation for OpenRouter providers.
+
+    This strategy handles providers that don't support function calling,
+    using regular OpenAI client with manual JSON parsing.
+    """
 
     def __init__(self, provider: str, api_key: str):
-        """Initialize OpenRouter strategy."""
+        """
+        Initialize OpenRouter strategy.
+
+        Parameters
+        ----------
+        provider : str
+            API provider name (typically "OpenRouter")
+        api_key : str
+            API key for OpenRouter
+        """
         super().__init__(provider, api_key)
         self.client = OpenAI(
             base_url=self.base_url,
@@ -39,6 +59,7 @@ class OpenRouterLLMStrategy(LLMStrategyInterface):
         model = "mistralai/mistral-7b-instruct:free"
         return base_url, default_headers, model
 
+    @retry_column_suggestions
     def get_column_suggestions(
         self, prompt: str, data_summary: Dict[str, Any]
     ) -> models.ColumnSuggestions:
@@ -88,7 +109,7 @@ class OpenRouterLLMStrategy(LLMStrategyInterface):
         pattern = r"(\w+)\s*(?:vs|and|\&)\s*(\w+).*?[Rr]easoning?:?\s*([^\n]+)"
         matches = re.findall(pattern, content, re.IGNORECASE | re.DOTALL)
 
-        for i, (col1, col2, reasoning) in enumerate(matches[:5]):
+        for col1, col2, reasoning in matches[:5]:
             suggestions.append(
                 models.ColumnSuggestion(
                     column1_name=col1.strip(),
@@ -109,12 +130,12 @@ class OpenRouterLLMStrategy(LLMStrategyInterface):
             suggestions=suggestions, overall_analysis=overall_analysis
         )
 
+    @retry_title_generation
     def generate_title(self, filename: str, columns: List[str]) -> str:
         """Generate title using OpenRouter."""
         try:
             prompt = prompts.OPENROUTER_TITLE_GENERATION_PROMPT.format(
-                filename=filename,
-                columns=', '.join(columns)
+                filename=filename, columns=", ".join(columns)
             )
 
             response = self.client.chat.completions.create(
@@ -143,6 +164,7 @@ class OpenRouterLLMStrategy(LLMStrategyInterface):
             st.error(f"OpenRouter title generation failed: {e}")
             return ""
 
+    @retry_validation_operations
     def check_question_relevance(self, user_message: str) -> models.IsChatQueryRelevant:
         """Check question relevance using LLM-based reasoning for OpenRouter."""
         try:
@@ -157,38 +179,36 @@ Your response must end with: true or false"""
 
             response = self.client.chat.completions.create(
                 model=self.model,
-                messages=[
-                    {"role": "user", "content": openrouter_relevance_prompt}
-                ],
+                messages=[{"role": "user", "content": openrouter_relevance_prompt}],
                 temperature=0.0,  # Zero temperature for consistency
                 max_tokens=100,
             )
 
             content = response.choices[0].message.content.strip()
-            
+
             # Debug: Print the actual response
             print(f"DEBUG - OpenRouter response: '{content}'")
-            
+
             # Extract the final word and check if it's true/false
             words = content.split()
             if words:
-                final_word = words[-1].lower().rstrip('.,!?')
+                final_word = words[-1].lower().rstrip(".,!?")
                 is_data_related = final_word == "true"
-                
+
                 # Extract reasoning (everything except the final word)
                 reasoning = " ".join(words[:-1]) if len(words) > 1 else "LLM analysis"
             else:
                 # Fallback if no words found
                 is_data_related = True
                 reasoning = "Empty response, defaulting to data-related"
-            
+
             print(f"DEBUG - Final word: '{final_word}', Decision: {is_data_related}")
-            
+
             return models.IsChatQueryRelevant(
                 is_data_related=is_data_related,
                 reasoning=reasoning[:200],
             )
-            
+
         except Exception as e:
             print(f"DEBUG - Exception: {e}")
             return models.IsChatQueryRelevant(
@@ -214,20 +234,23 @@ Your response must end with: true or false"""
                 response=response, is_concise=True, addresses_question=True
             )
 
+    @retry_chat_operations
+    def _get_streaming_response(self, messages: List[Dict[str, str]]):
+        """Get streaming response with retry logic."""
+        return self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=0.3,
+            max_tokens=400,
+            stream=True,
+        )
+
     def stream_data_insights(
-        self,
-        messages: List[Dict[str, str]],
-        **kwargs
-    ):
+        self, messages: List[Dict[str, str]], **kwargs
+    ) -> Generator[str, None, str]:
         """Stream data insights using OpenRouter."""
         try:
-            stream = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=0.3,  # Lower temperature for more focused responses
-                max_tokens=400,  # Reduced for more concise responses
-                stream=True,
-            )
+            stream = self._get_streaming_response(messages)
 
             full_response = ""
             for chunk in stream:

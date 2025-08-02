@@ -4,6 +4,7 @@ import plotly.express as px
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from datatypes import AppState
+from typing import Any
 
 # =================================================================================================
 # States and Computations
@@ -11,7 +12,9 @@ from datatypes import AppState
 
 
 @st.cache_data
-def clean_csv_file(csv_file) -> tuple[pd.DataFrame, list[str]]:
+def clean_csv_file(
+    csv_file: st.runtime.uploaded_file_manager.UploadedFile,
+) -> tuple[pd.DataFrame, list[str]]:
     """
     Clean CSV file by removing rows with missing values and extract numeric columns.
 
@@ -62,7 +65,7 @@ def is_valid_plot_config(df: pd.DataFrame, x: str, y: str) -> bool:
 # Components --------------------------------------------------------------------------------------
 
 
-def create_download_plotly_figure_button(fig, filename: str = "plot.png") -> None:
+def create_download_plotly_figure_button(fig: Any, filename: str = "plot.png") -> None:
     """
     Convert Plotly figure to PNG and create a Streamlit download button.
 
@@ -120,7 +123,7 @@ def render_github_footer() -> None:
 # Tabs --------------------------------------------------------------------------------------------
 
 
-def render_cumulative_variance_tab(app_state):
+def render_cumulative_variance_tab(app_state: AppState) -> None:
     """Renders cumulative explained variance visualization tab."""
     st.subheader("Cumulative Explained Variance")
     if app_state.pca_state.cumulative_variance:
@@ -170,10 +173,8 @@ def render_cumulative_variance_tab(app_state):
         st.info("Run PCA in the 'PCA Config' tab to see the cumulative variance plot.")
 
 
-def render_scree_tab(app_state):
-    """
-    Renders scree plot visualization tab
-    """
+def render_scree_tab(app_state: AppState) -> None:
+    """Renders scree plot visualization tab."""
     st.subheader("Scree Plot")
     if app_state.pca_state.explained_variance:
         # Create scree plot data.
@@ -197,10 +198,10 @@ def render_scree_tab(app_state):
         st.info("Run PCA in the 'PCA Config' tab to see the scree plot.")
 
 
-def render_scatter_tab(filtered_df, x_axis, y_axis, uploaded_csv_file):
-    """
-    Renders scatter plot visualization tab
-    """
+def render_scatter_tab(
+    filtered_df: pd.DataFrame, x_axis: str, y_axis: str, uploaded_csv_file: Any
+) -> None:
+    """Renders scatter plot visualization tab."""
     st.subheader("Scatter Plot Visualization")
     if is_valid_plot_config(filtered_df, x_axis, y_axis):
         fig = px.scatter(filtered_df, x=x_axis, y=y_axis, title=f"{y_axis} vs {x_axis}")
@@ -214,11 +215,14 @@ def render_scatter_tab(filtered_df, x_axis, y_axis, uploaded_csv_file):
         )
 
 
-def render_viz_config_tab(cleaned_df, numeric_cols, x_axis, y_axis, app_state):
-    """
-    Renders visualization configuration UI
-    Returns updated filtered_df, x_axis, y_axis
-    """
+def render_viz_config_tab(
+    cleaned_df: pd.DataFrame,
+    numeric_cols: list[str],
+    x_axis: str,
+    y_axis: str,
+    app_state: AppState,
+) -> tuple[pd.DataFrame, str, str, AppState]:
+    """Renders visualization configuration UI and returns updated values."""
     st.subheader("Scatter Plot Configuration")
     filtered_df = pd.DataFrame()
 
@@ -281,13 +285,15 @@ def render_viz_config_tab(cleaned_df, numeric_cols, x_axis, y_axis, app_state):
     return filtered_df, x_axis, y_axis, app_state
 
 
-def render_ai_helper_tab(app_state: AppState, uploaded_csv_file):
+def render_ai_helper_tab(
+    app_state: AppState, uploaded_csv_file: Any
+) -> tuple[AppState, bool]:
     """
     Renders the AI Data Assistant tab UI with column suggestions and chatbot functionality.
 
     Returns updated app_state and a rerun flag.
     """
-    from llm_client import LLMClient
+    from llm.llm_client import LLMClient
     from models import ChatMessage
     from datetime import datetime
     from data_utils import (
@@ -310,7 +316,9 @@ def render_ai_helper_tab(app_state: AppState, uploaded_csv_file):
             st.success(f"API key set for {provider}")
             rerun_needed = True
 
-        if hasattr(app_state, "active_provider") and hasattr(app_state, "active_api_key"):
+        if hasattr(app_state, "active_provider") and hasattr(
+            app_state, "active_api_key"
+        ):
             if app_state.active_provider and app_state.active_api_key:
                 st.info(f"✅ API key configured for {app_state.active_provider}")
             else:
@@ -327,7 +335,9 @@ def render_ai_helper_tab(app_state: AppState, uploaded_csv_file):
             and app_state.last_processed_filename != uploaded_csv_file.name
         ):
             with st.spinner("Generating title using AI..."):
-                llm_client = LLMClient(app_state.active_provider, app_state.active_api_key)
+                llm_client = LLMClient(
+                    app_state.active_provider, app_state.active_api_key
+                )
                 title = llm_client.generate_title(
                     uploaded_csv_file.name,
                     app_state.cleaned_df.columns.tolist(),
@@ -387,7 +397,9 @@ def render_ai_helper_tab(app_state: AppState, uploaded_csv_file):
                             )
 
                             if y_data:
-                                chart_data = create_line_chart_data(y_data, max_points=20)
+                                chart_data = create_line_chart_data(
+                                    y_data, max_points=20
+                                )
                             else:
                                 chart_data = []
 
@@ -445,89 +457,105 @@ def render_ai_helper_tab(app_state: AppState, uploaded_csv_file):
             st.info(f"⚠️ {error_message}")
 
     with st.expander("💬 Data Analysis Assistant", expanded=True):
-        if not (hasattr(app_state, "active_provider") and hasattr(app_state, "active_api_key") 
-                and app_state.active_provider and app_state.active_api_key):
+        if not (
+            hasattr(app_state, "active_provider")
+            and hasattr(app_state, "active_api_key")
+            and app_state.active_provider
+            and app_state.active_api_key
+        ):
             st.warning("⚠️ Please configure an API key above to use the chatbot.")
             return app_state, rerun_needed
-        
+
         if uploaded_csv_file is None or app_state.cleaned_df.empty:
-            st.info("📊 Please upload a CSV file to start asking questions about your data.")
+            st.info(
+                "📊 Please upload a CSV file to start asking questions about your data."
+            )
             return app_state, rerun_needed
-        
+
         # Clear chat button
         if st.button("🗑️ Clear Chat", key="clear_chat_btn"):
             app_state.chat_history = []
             st.rerun()
-        
+
         # Chat container - single block for all messages
         with st.container():
             # Display all chat messages in sequence
             for message in app_state.chat_history:
                 with st.chat_message(message.role):
                     st.write(message.content)
-        
+
         # Chat input at the bottom
-        if prompt := st.chat_input("Ask me anything about your data...", key="data_chat_input"):
+        if prompt := st.chat_input(
+            "Ask me anything about your data...", key="data_chat_input"
+        ):
             print(f"[DEBUG] UI: User submitted prompt: {prompt}")
             user_message = ChatMessage(
-                role="user",
-                content=prompt,
-                timestamp=datetime.now()
+                role="user", content=prompt, timestamp=datetime.now()
             )
             app_state.chat_history.append(user_message)
-            print(f"[DEBUG] UI: Added user message to chat history. Total messages: {len(app_state.chat_history)}")
-            
+            print(
+                f"[DEBUG] UI: Added user message to chat history. Total messages: {len(app_state.chat_history)}"
+            )
+
             # Process assistant response and add to history
             try:
-                print(f"[DEBUG] UI: Creating LLMClient with provider: {app_state.active_provider}")
-                llm_client = LLMClient(app_state.active_provider, app_state.active_api_key)
-                
-                column_suggestions = getattr(st.session_state, 'column_suggestions', None)
-                print(f"[DEBUG] UI: Column suggestions available: {column_suggestions is not None}")
-                
+                print(
+                    f"[DEBUG] UI: Creating LLMClient with provider: {app_state.active_provider}"
+                )
+                llm_client = LLMClient(
+                    app_state.active_provider, app_state.active_api_key
+                )
+
+                column_suggestions = getattr(
+                    st.session_state, "column_suggestions", None
+                )
+                print(
+                    f"[DEBUG] UI: Column suggestions available: {column_suggestions is not None}"
+                )
+
                 # Get complete response without streaming
                 print(f"[DEBUG] UI: Starting to collect streaming response...")
                 full_response = ""
                 chunk_count = 0
                 for chunk in llm_client.stream_data_insights(
-                    prompt, 
+                    prompt,
                     app_state.chat_history[:-1],  # Exclude the current user message.
                     app_state.cleaned_df,
                     app_state.numeric_cols,
                     app_state.pca_state,
-                    column_suggestions
+                    column_suggestions,
                 ):
                     chunk_count += 1
                     print(f"[DEBUG] UI: Received chunk {chunk_count}: {chunk}")
                     full_response += chunk
-                
+
                 print(f"[DEBUG] UI: Streaming completed. Total chunks: {chunk_count}")
                 print(f"[DEBUG] UI: Full response length: {len(full_response)}")
                 print(f"[DEBUG] UI: Full response: {full_response}")
-                
+
                 if full_response:
                     assistant_message = ChatMessage(
                         role="assistant",
                         content=full_response,
-                        timestamp=datetime.now()
+                        timestamp=datetime.now(),
                     )
                     app_state.chat_history.append(assistant_message)
-                    print(f"[DEBUG] UI: Added assistant message to chat history. Total messages: {len(app_state.chat_history)}")
+                    print(
+                        f"[DEBUG] UI: Added assistant message to chat history. Total messages: {len(app_state.chat_history)}"
+                    )
                 else:
                     print(f"[DEBUG] UI: No response received from LLM")
-                
+
             except Exception as e:
                 error_msg = f"Sorry, I encountered an error: {str(e)}"
                 print(f"[ERROR] UI: Exception occurred: {error_msg}")
                 print(f"[ERROR] UI: Exception type: {type(e)}")
-                
+
                 error_message = ChatMessage(
-                    role="assistant",
-                    content=error_msg,
-                    timestamp=datetime.now()
+                    role="assistant", content=error_msg, timestamp=datetime.now()
                 )
                 app_state.chat_history.append(error_message)
-            
+
             # Rerun to display the updated chat history
             print(f"[DEBUG] UI: Calling st.rerun() to refresh chat display")
             st.rerun()
@@ -535,7 +563,7 @@ def render_ai_helper_tab(app_state: AppState, uploaded_csv_file):
     return app_state, rerun_needed
 
 
-def render_pca_formulas_tab(app_state):
+def render_pca_formulas_tab(app_state: AppState) -> None:
     """Renders the PCA formulas tab UI."""
     st.subheader("Principal Component Formulas")
     if app_state.pca_state.pca_object is not None and app_state.pca_state.pca_cols:
@@ -559,9 +587,10 @@ def render_pca_formulas_tab(app_state):
         st.info("Upload data and run PCA in the 'PCA Config' tab to see formulas.")
 
 
-def render_pca_tab(cleaned_df, numeric_cols, app_state):
-    # Renders PCA configuration UI and handles PCA processing.
-    # Returns updated df, numeric_cols, and app_state.
+def render_pca_tab(
+    cleaned_df: pd.DataFrame, numeric_cols: list[str], app_state: AppState
+) -> tuple[pd.DataFrame, list[str], AppState]:
+    """Renders PCA configuration UI and handles PCA processing."""
     st.subheader("Principal Component Analysis")
     if numeric_cols:
         exclude_cols = st.multiselect(

@@ -6,3 +6,4 @@ kaleido==0.2.1
 instructor
 pydantic
 openai
+tenacity

@@ -62,7 +62,7 @@ class ChatMessage(BaseModel):
 
     @field_validator("role")
     @classmethod
-    def validate_role(cls, v):
+    def validate_role(cls, v: str) -> str:
         if v not in ["user", "assistant", "system"]:
             raise ValueError("Role must be user, assistant, or system")
         return v
@@ -96,4 +96,6 @@ class ChatStreamResponse(BaseModel):
     """Model for streaming chat responses."""
 
     content: str = Field(..., description="The chat response content")
-    is_complete: bool = Field(default=False, description="Whether the response is complete")
+    is_complete: bool = Field(
+        default=False, description="Whether the response is complete"
+    )

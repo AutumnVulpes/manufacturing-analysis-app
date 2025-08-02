@@ -108,7 +108,6 @@ if uploaded_csv_file is not None:
             if rerun_needed:
                 st.rerun()
 
-
     with right_col:
         tab_scatter, tab_scree, tab_cumulative_variance = st.tabs(
             ["Scatter Plot", "Scree Plot", "Cumulative Explained Variance"]
