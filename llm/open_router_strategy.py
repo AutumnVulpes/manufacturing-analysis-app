@@ -11,10 +11,10 @@ import re
 import streamlit as st
 from typing import Dict, Any, List, Generator
 
-from .llm_strategy_interface import LLMStrategyInterface
+from .strategy_interface import LLMStrategyInterface
 import models
 from . import prompts
-from .retry_config import (
+from .retry import (
     retry_column_suggestions,
     retry_title_generation,
     retry_chat_operations,
@@ -98,14 +98,13 @@ class OpenRouterLLMStrategy(LLMStrategyInterface):
             )
 
         except json.JSONDecodeError:
-            # Fallback: try to extract information from text
             return self._parse_text_response(content)
 
     def _parse_text_response(self, content: str) -> models.ColumnSuggestions:
         """Parse text response when JSON parsing fails."""
         suggestions = []
 
-        # Try to extract column pairs and reasoning
+        # Try to extract column pairs and reasoning.
         pattern = r"(\w+)\s*(?:vs|and|\&)\s*(\w+).*?[Rr]easoning?:?\s*([^\n]+)"
         matches = re.findall(pattern, content, re.IGNORECASE | re.DOTALL)
 
@@ -118,11 +117,11 @@ class OpenRouterLLMStrategy(LLMStrategyInterface):
                 )
             )
 
-        # Extract overall analysis (first paragraph usually)
+        # Extract overall analysis (first paragraph usually).
         lines = content.split("\n")
         overall_analysis = ""
         for line in lines:
-            if len(line.strip()) > 50:  # Assume first substantial line is analysis
+            if len(line.strip()) > 50:  # Assume first substantial line is analysis.
                 overall_analysis = line.strip()
                 break
 
@@ -152,7 +151,7 @@ class OpenRouterLLMStrategy(LLMStrategyInterface):
             )
 
             title = response.choices[0].message.content.strip()
-            # Clean up the response to take only the first line and limit to reasonable length
+            # Clean up the response to take only the first line and limit to reasonable length.
             title = title.split("\n")[0].strip()
             words = title.split()
             if len(words) > 6:
@@ -168,7 +167,6 @@ class OpenRouterLLMStrategy(LLMStrategyInterface):
     def check_question_relevance(self, user_message: str) -> models.IsChatQueryRelevant:
         """Check question relevance using LLM-based reasoning for OpenRouter."""
         try:
-            # Simple, direct prompt that forces the model to end with true/false
             openrouter_relevance_prompt = f"""Analyze this question: "{user_message}"
 
 Is this question about data analysis, datasets, or data science concepts?
@@ -180,25 +178,21 @@ Your response must end with: true or false"""
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": openrouter_relevance_prompt}],
-                temperature=0.0,  # Zero temperature for consistency
+                temperature=0.0,  # Zero temperature for consistency.
                 max_tokens=100,
             )
 
             content = response.choices[0].message.content.strip()
 
-            # Debug: Print the actual response
             print(f"DEBUG - OpenRouter response: '{content}'")
 
-            # Extract the final word and check if it's true/false
             words = content.split()
             if words:
                 final_word = words[-1].lower().rstrip(".,!?")
                 is_data_related = final_word == "true"
 
-                # Extract reasoning (everything except the final word)
                 reasoning = " ".join(words[:-1]) if len(words) > 1 else "LLM analysis"
             else:
-                # Fallback if no words found
                 is_data_related = True
                 reasoning = "Empty response, defaulting to data-related"
 
@@ -221,8 +215,8 @@ Your response must end with: true or false"""
     ) -> models.IsChatResponseValid:
         """Validate response using simple heuristics for OpenRouter."""
         try:
-            is_concise = len(response.split()) < 200  # Less than 200 words
-            addresses_question = len(response) > 10  # At least some content
+            is_concise = len(response.split()) < 200  # Less than 200 words.
+            addresses_question = len(response) > 10  # At least some content.
 
             return models.IsChatResponseValid(
                 response=response,

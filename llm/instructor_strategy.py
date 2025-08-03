@@ -10,10 +10,10 @@ from openai import OpenAI
 import streamlit as st
 from typing import Dict, Any, List, Generator
 
-from .llm_strategy_interface import LLMStrategyInterface
+from .strategy_interface import LLMStrategyInterface
 import models
 from . import prompts
-from .retry_config import (
+from .retry import (
     retry_column_suggestions,
     retry_title_generation,
     retry_chat_operations,
@@ -41,13 +41,11 @@ class InstructorLLMStrategy(LLMStrategyInterface):
             API key for the selected provider
         """
         super().__init__(provider, api_key)
-        # Raw client for streaming
         self.raw_client = OpenAI(
             base_url=self.base_url,
             api_key=api_key,
             default_headers=self.default_headers,
         )
-        # Instructor client for structured operations
         self.client = instructor.from_openai(self.raw_client, mode=instructor.Mode.JSON)
 
     def _get_api_config(self) -> tuple[str, dict, str]:
@@ -96,7 +94,7 @@ class InstructorLLMStrategy(LLMStrategyInterface):
             max_tokens=1500,
         )
 
-        # Validate suggestions against available columns
+        # Validate suggestions against available columns.
         valid_suggestions = []
         available_columns = set(data_summary["column_names"])
 
@@ -166,7 +164,7 @@ class InstructorLLMStrategy(LLMStrategyInterface):
             print("USING INSTRUCTOR")
             return response
         except Exception:
-            # Default to treating as data-related if check fails
+            # Default to treating as data-related if check fails.
             return models.IsChatQueryRelevant(
                 is_data_related=True,
                 reasoning="Relevance check failed, defaulting to data-related",
@@ -228,7 +226,7 @@ class InstructorLLMStrategy(LLMStrategyInterface):
 
             print(f"[DEBUG] Got raw stream object: {type(stream)}")
 
-            # Step 1: Collect streaming chunks and yield them in real-time
+            # Step 1: Collect streaming chunks and yield them in real-time.
             full_content = ""
             chunk_count = 0
 
@@ -236,7 +234,6 @@ class InstructorLLMStrategy(LLMStrategyInterface):
                 chunk_count += 1
                 print(f"[DEBUG] Processing raw chunk {chunk_count}: {type(chunk)}")
 
-                # Extract content from OpenAI streaming format
                 if hasattr(chunk, "choices") and len(chunk.choices) > 0:
                     delta = chunk.choices[0].delta
                     if hasattr(delta, "content") and delta.content:
@@ -251,14 +248,13 @@ class InstructorLLMStrategy(LLMStrategyInterface):
             print(f"[DEBUG] Full content length: {len(full_content)}")
             print(f"[DEBUG] Full content: {full_content}")
 
-            # Step 2: Validate complete response with instructor (post-processing)
+            # Step 2: Validate complete response with instructor (post-processing).
             try:
                 print(f"[DEBUG] Validating complete response with instructor...")
                 validated_response = models.ChatStreamResponse(content=full_content)
                 print(f"[DEBUG] Response validation successful")
                 return validated_response.content
             except Exception as validation_error:
-                # If validation fails, return raw content with warning
                 print(f"[WARNING] Response validation failed: {validation_error}")
                 print(f"[WARNING] Returning raw content without validation")
                 return full_content

@@ -41,3 +41,43 @@ h2 {
 .github-logo-container img {
     margin-right: 10px; /* Logo margin remains unchanged */
 }
+
+/* Typewriter Effect for Title */
+.typewriter-title {
+    font-size: 2.5rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    margin-top: 0;
+    padding-top: 20px;
+    padding-bottom: 20px;
+    overflow: hidden;
+    white-space: nowrap;
+    width: 0;
+    animation: typewriter 2.5s steps(50, end) forwards;
+}
+
+/* Typewriter animation */
+@keyframes typewriter {
+    from {
+        width: 0;
+    }
+    to {
+        width: 100%;
+    }
+}
+
+/* Remove animation after completion */
+.typewriter-title.animation-complete {
+    animation: none;
+    width: 100%;
+}
+
+/* Static title (no animation) */
+.static-title {
+    font-size: 2.5rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    margin-top: 0;
+    padding-top: 20px;
+    padding-bottom: 20px;
+}

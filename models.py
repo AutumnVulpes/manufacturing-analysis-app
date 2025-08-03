@@ -4,13 +4,7 @@ from datetime import datetime
 
 
 class ColumnSuggestion(BaseModel):
-    """
-    Model for a single column pairing suggestion from the LLM.
-
-    This model represents one suggested pair of columns that could be meaningfully
-    compared in a scatter plot visualization, along with the reasoning for why
-    this pairing would be valuable for analysis.
-    """
+    """Model for a single column pairing suggestion from the LLM."""
 
     column1_name: str = Field(
         description="The exact name of the first suggested column from the CSV"
@@ -24,13 +18,7 @@ class ColumnSuggestion(BaseModel):
 
 
 class ColumnSuggestions(BaseModel):
-    """
-    Model for the complete response containing multiple column suggestions.
-
-    This model represents the full response from the LLM when requesting column
-    pairing suggestions, including both the individual suggestions and an overall
-    analysis of the dataset characteristics.
-    """
+    """Model for the complete response containing multiple column suggestions."""
 
     suggestions: List[ColumnSuggestion] = Field(
         description="List of column pairing suggestions"
@@ -41,12 +29,7 @@ class ColumnSuggestions(BaseModel):
 
 
 class TitleSuggestion(BaseModel):
-    """
-    Model for AI-generated dashboard title.
-
-    This model represents the structured response when requesting an AI-generated
-    title for the data analysis dashboard based on the uploaded CSV file and its columns.
-    """
+    """Model for AI-generated dashboard title."""
 
     title: str = Field(
         description="A concise, professional 3-4 word title that implies the tool's purpose for analyzing the data"

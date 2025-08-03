@@ -63,3 +63,9 @@ class AppState:
 
     # Chat history of past messages.
     chat_history: List["ChatMessage"] = field(default_factory=list)
+
+    # Flag to trigger typewriter effect when title is updated.
+    title_needs_typewriter: bool = False
+
+    # Previous title to detect changes.
+    previous_title: str = ""

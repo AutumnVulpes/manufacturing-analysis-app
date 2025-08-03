@@ -17,7 +17,6 @@ import logging
 from typing import Callable
 import openai
 
-# Configure logging for retry attempts
 logger = logging.getLogger(__name__)
 
 
@@ -61,13 +60,12 @@ def is_network_error(exception: Exception) -> bool:
 
 def should_retry_error(exception: Exception) -> bool:
     """Determine if an error should be retried."""
-    # Don't retry client errors (4xx except 429)
+    # Don't retry client errors (4xx except 429).
     error_str = str(exception).lower()
     client_errors = ["400", "401", "403", "404", "422"]
     if any(code in error_str for code in client_errors):
         return False
     
-    # Retry rate limits, server errors, and network errors
     return (
         is_rate_limit_error(exception)
         or is_server_error(exception)
@@ -76,7 +74,7 @@ def should_retry_error(exception: Exception) -> bool:
     )
 
 
-# Retry decorators for different operation types
+# Retry decorators for different operation types --------------------------------------------------------------------------------------------------------------
 
 def retry_column_suggestions(func: Callable) -> Callable:
     """Retry decorator for column suggestion operations (aggressive retry)."""

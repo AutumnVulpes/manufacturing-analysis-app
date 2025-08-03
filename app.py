@@ -54,15 +54,48 @@ if "app_state" not in st.session_state:
         generated_title="",
         last_processed_filename="",
         chat_history=[],
+        title_needs_typewriter=False,
+        previous_title="",
     )
 
 app_state = st.session_state.app_state
 
-# Set title conditionally.
+# Update title if new generated title still not used.
+if app_state.generated_title != app_state.previous_title and app_state.generated_title:
+    app_state.title_needs_typewriter = True
+    app_state.previous_title = app_state.generated_title
+
 if app_state.generated_title:
-    st.title(f"{app_state.generated_title}✨")
+    if app_state.title_needs_typewriter:
+        # Use typewriter effect for new titles.
+        title_html = f"""
+        <div class="typewriter-title" id="typewriter-title">
+            {app_state.generated_title}✨
+        </div>
+        <script>
+        // Clean up animation after completion
+        setTimeout(function() {{
+            const titleElement = document.getElementById('typewriter-title');
+            if (titleElement) {{
+                titleElement.classList.add('animation-complete');
+            }}
+        }}, 2600); // 2.5s animation + 0.1s buffer
+        </script>
+        """
+        st.markdown(title_html, unsafe_allow_html=True)
+        # Reset the flag after displaying.
+        app_state.title_needs_typewriter = False
+    else:
+        # Use static title for existing titles.
+        st.markdown(
+            f'<div class="static-title">{app_state.generated_title}✨</div>',
+            unsafe_allow_html=True,
+        )
 else:
-    st.title("Vulpes' Data Analysis Dashboard")
+    st.markdown(
+        '<div class="static-title">Vulpes\' Data Analysis Dashboard</div>',
+        unsafe_allow_html=True,
+    )
 
 uploaded_csv_file = st.file_uploader("Upload dataset", type="csv")
 

@@ -288,12 +288,8 @@ def render_viz_config_tab(
 def render_ai_helper_tab(
     app_state: AppState, uploaded_csv_file: Any
 ) -> tuple[AppState, bool]:
-    """
-    Renders the AI Data Assistant tab UI with column suggestions and chatbot functionality.
-
-    Returns updated app_state and a rerun flag.
-    """
-    from llm.llm_client import LLMClient
+    """Renders the AI Data Assistant tab UI with column suggestions and chatbot functionality."""
+    from llm.client import LLMClient
     from models import ChatMessage
     from datetime import datetime
     from data_utils import (
@@ -343,8 +339,10 @@ def render_ai_helper_tab(
                     app_state.cleaned_df.columns.tolist(),
                 )
                 if title:
+                    # Set the title and trigger typewriter effect
                     app_state.generated_title = title
                     app_state.last_processed_filename = uploaded_csv_file.name
+                    app_state.title_needs_typewriter = True
                     st.success(f"Generated title: {title}")
                     rerun_needed = True
 
@@ -472,19 +470,15 @@ def render_ai_helper_tab(
             )
             return app_state, rerun_needed
 
-        # Clear chat button
         if st.button("🗑️ Clear Chat", key="clear_chat_btn"):
             app_state.chat_history = []
             st.rerun()
 
-        # Chat container - single block for all messages
         with st.container():
-            # Display all chat messages in sequence
             for message in app_state.chat_history:
                 with st.chat_message(message.role):
                     st.write(message.content)
 
-        # Chat input at the bottom
         if prompt := st.chat_input(
             "Ask me anything about your data...", key="data_chat_input"
         ):
@@ -497,7 +491,7 @@ def render_ai_helper_tab(
                 f"[DEBUG] UI: Added user message to chat history. Total messages: {len(app_state.chat_history)}"
             )
 
-            # Process assistant response and add to history
+            # Process assistant response then add ot history and render.
             try:
                 print(
                     f"[DEBUG] UI: Creating LLMClient with provider: {app_state.active_provider}"
@@ -513,7 +507,6 @@ def render_ai_helper_tab(
                     f"[DEBUG] UI: Column suggestions available: {column_suggestions is not None}"
                 )
 
-                # Get complete response without streaming
                 print(f"[DEBUG] UI: Starting to collect streaming response...")
                 full_response = ""
                 chunk_count = 0
@@ -556,7 +549,6 @@ def render_ai_helper_tab(
                 )
                 app_state.chat_history.append(error_message)
 
-            # Rerun to display the updated chat history
             print(f"[DEBUG] UI: Calling st.rerun() to refresh chat display")
             st.rerun()
 

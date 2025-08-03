@@ -8,8 +8,8 @@ using the strategy pattern to handle provider-specific implementations.
 import pandas as pd
 from typing import Dict, Any, List, Optional, Generator
 
-from .open_router_llm_strategy import OpenRouterLLMStrategy
-from .instructor_llm_strategy import InstructorLLMStrategy
+from .open_router_strategy import OpenRouterLLMStrategy
+from .instructor_strategy import InstructorLLMStrategy
 
 import models
 from . import prompts
