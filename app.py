@@ -60,7 +60,7 @@ app_state = st.session_state.app_state
 
 # Set title conditionally.
 if app_state.generated_title:
-    st.title(app_state.generated_title)
+    st.title(f"{app_state.generated_title}✨")
 else:
     st.title("Vulpes' Data Analysis Dashboard")
 
