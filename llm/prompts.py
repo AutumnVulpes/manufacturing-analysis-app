@@ -1,3 +1,6 @@
+import pandas as pd
+from typing import List, Optional, Any, Dict
+
 """
 LLM Prompts for Manufacturing Analysis App
 
@@ -94,9 +97,6 @@ OPENROUTER_TITLE_GENERATION_SYSTEM_PROMPT = (
 # Data Context Templates and Functions
 # =================================================================================================
 
-import pandas as pd
-from typing import List, Optional, Any
-
 DATA_CONTEXT_TEMPLATE = """
 CURRENT DATASET CONTEXT:
 - Total rows: {total_rows}
@@ -121,6 +121,51 @@ GENERATED COLUMN SUGGESTIONS:
 - Number of suggestions: {suggestions_count}
 - Suggested pairs: {suggested_pairs}
 """
+
+
+def prepare_data_for_llm(
+    df: pd.DataFrame, numeric_cols: List[str], sample_rows: int = 5
+) -> Dict[str, Any]:
+    """
+    Prepare data summary for LLM analysis.
+
+    Args:
+        df: Input dataframe
+        numeric_cols: List of numeric column names
+        sample_rows: Number of sample rows to include
+
+    Returns:
+        Dictionary containing data summary for LLM
+    """
+    sample_data = {}
+    for col in numeric_cols[:10]:  # Limit to first 10 columns for performance.
+        if col in df.columns:
+            numeric_data = pd.to_numeric(df[col], errors="coerce").dropna()
+            if len(numeric_data) > 0:
+                sample_data[col] = numeric_data.head(sample_rows).tolist()
+
+    stats_info = []
+    for col in numeric_cols[:10]:
+        if col in df.columns:
+            numeric_data = pd.to_numeric(df[col], errors="coerce").dropna()
+            if len(numeric_data) > 0:
+                stats = {
+                    "column": col,
+                    "mean": float(numeric_data.mean()),
+                    "std": float(numeric_data.std()),
+                    "min": float(numeric_data.min()),
+                    "max": float(numeric_data.max()),
+                    "count": int(len(numeric_data)),
+                }
+                stats_info.append(stats)
+
+    return {
+        "column_names": numeric_cols,
+        "sample_data": sample_data,
+        "statistics": stats_info,
+        "total_rows": len(df),
+        "total_columns": len(numeric_cols),
+    }
 
 
 def create_column_suggestion_prompt(data_summary: dict) -> str:

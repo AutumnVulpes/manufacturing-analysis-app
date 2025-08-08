@@ -59,6 +59,111 @@ def is_valid_plot_config(df: pd.DataFrame, x: str, y: str) -> bool:
 
 
 # =================================================================================================
+# Title Management
+# =================================================================================================
+
+
+def _should_trigger_typewriter_effect(app_state: AppState) -> bool:
+    """
+    Check if typewriter effect should be triggered for the title.
+
+    Args:
+        app_state: Current application state
+
+    Returns:
+        bool: True if typewriter effect should be triggered
+    """
+    return (
+        app_state.generated_title
+        and app_state.generated_title != app_state.previous_title
+    )
+
+
+def _update_title_state(app_state: AppState) -> None:
+    """
+    Update title state flags based on current conditions.
+
+    Args:
+        app_state: Application state to update
+    """
+    if _should_trigger_typewriter_effect(app_state):
+        app_state.title_needs_typewriter = True
+        app_state.previous_title = app_state.generated_title
+
+
+def _render_typewriter_title(title: str) -> None:
+    """
+    Render title with typewriter animation effect.
+
+    Args:
+        title: Title text to display with typewriter effect
+    """
+    title_html = f"""
+    <div class="typewriter-title" id="typewriter-title">
+        {title}✨
+    </div>
+    <script>
+    // Clean up animation after completion
+    setTimeout(function() {{
+        const titleElement = document.getElementById('typewriter-title');
+        if (titleElement) {{
+            titleElement.classList.add('animation-complete');
+        }}
+    }}, 2600); // 2.5s animation + 0.1s buffer
+    </script>
+    """
+    st.markdown(title_html, unsafe_allow_html=True)
+
+
+def _render_static_title(title: str) -> None:
+    """
+    Render title without animation (static display).
+
+    Args:
+        title: Title text to display statically
+    """
+    st.markdown(
+        f'<div class="static-title">{title}✨</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def render_dashboard_title(app_state: AppState) -> AppState:
+    """
+    Render the dashboard title with appropriate animation effects.
+
+    Handles title state management, typewriter effect triggering,
+    and rendering decisions based on current state.
+
+    Args:
+        app_state: Current application state
+
+    Returns:
+        AppState: Updated application state with title flags reset
+    """
+    # Update title state flags
+    _update_title_state(app_state)
+
+    if app_state.generated_title:
+        if app_state.title_needs_typewriter:
+            # Use typewriter effect for new titles
+            _render_typewriter_title(app_state.generated_title)
+            # Reset the flag after displaying
+            app_state.title_needs_typewriter = False
+        else:
+            # Use static title for existing titles
+            _render_static_title(app_state.generated_title)
+    else:
+        # Default title when no generated title exists
+        st.markdown(
+            '<div class="static-title">Vulpes\' Data Analysis Dashboard</div>',
+            unsafe_allow_html=True,
+        )
+
+    return app_state
+
+
+# =================================================================================================
 # Widgets
 # =================================================================================================
 
@@ -285,272 +390,290 @@ def render_viz_config_tab(
     return filtered_df, x_axis, y_axis, app_state
 
 
-def render_ai_helper_tab(
-    app_state: AppState, uploaded_csv_file: Any
-) -> tuple[AppState, bool]:
-    """Renders the AI Data Assistant tab UI with column suggestions and chatbot functionality."""
+def _has_valid_api_key(app_state: AppState) -> bool:
+    """Check if app_state has a valid API key configured."""
+    return (
+        hasattr(app_state, "active_provider")
+        and hasattr(app_state, "active_api_key")
+        and app_state.active_provider
+        and app_state.active_api_key
+    )
+
+
+def _render_api_key_management(app_state: AppState, uploaded_csv_file: Any) -> bool:
+    """Render the API Key Management dropdown section."""
     from llm.client import LLMClient
-    from models import ChatMessage
-    from datetime import datetime
+
+    rerun_needed = False
+
+    provider = st.selectbox(
+        "Provider", ["OpenRouter", "Gemini", "OpenAI"], key="api_provider"
+    )
+    key_value = st.text_input("API Key", type="password", key="api_key_input")
+    if st.button("Set API Key") and key_value:
+        app_state.active_provider = provider
+        app_state.active_api_key = key_value
+        st.success(f"API key set for {provider}")
+        rerun_needed = True
+
+    if _has_valid_api_key(app_state):
+        st.info(f"✅ API key configured for {app_state.active_provider}")
+    else:
+        st.warning("⚠️ No API key configured")
+
+    # Auto-generate title when new file is uploaded
+    if (
+        _has_valid_api_key(app_state)
+        and uploaded_csv_file
+        and app_state.last_processed_filename != uploaded_csv_file.name
+    ):
+        with st.spinner("Generating title using AI..."):
+            llm_client = LLMClient(app_state.active_provider, app_state.active_api_key)
+            title = llm_client.generate_title(
+                uploaded_csv_file.name,
+                app_state.cleaned_df.columns.tolist(),
+            )
+            if title:
+                app_state.generated_title = title
+                app_state.last_processed_filename = uploaded_csv_file.name
+                app_state.title_needs_typewriter = True
+                st.success(f"Generated title: {title}")
+                rerun_needed = True
+
+    return rerun_needed
+
+
+def _render_column_suggestions(app_state: AppState) -> None:
+    """Render the Column Comparison Suggestions dropdown section."""
+    from llm.client import LLMClient
+    from llm.prompts import prepare_data_for_llm
     from data_utils import (
-        prepare_data_for_llm,
         validate_data_for_suggestions,
         get_column_data_for_visualization,
         create_line_chart_data,
     )
 
+    is_valid, error_message = validate_data_for_suggestions(
+        app_state.cleaned_df, app_state.numeric_cols
+    )
+
+    if _has_valid_api_key(app_state) and is_valid:
+        if st.button(
+            "Get AI Column Comparison Suggestions", key="column_suggestion_btn"
+        ):
+            try:
+                with st.spinner(
+                    "🔄 Generating column suggestions... This may take a few moments."
+                ):
+                    data_summary = prepare_data_for_llm(
+                        app_state.cleaned_df, app_state.numeric_cols, sample_rows=5
+                    )
+
+                    llm_client = LLMClient(
+                        app_state.active_provider, app_state.active_api_key
+                    )
+                    suggestions_response = llm_client.get_column_suggestions(
+                        data_summary
+                    )
+
+                if suggestions_response.suggestions:
+                    st.success(
+                        f"✅ Generated {len(suggestions_response.suggestions)} suggestions!"
+                    )
+
+                    # Store suggestions in session state for persistence with use of AI chatbot.
+                    st.session_state.column_suggestions = suggestions_response
+
+                    suggestions_data = []
+
+                    for suggestion in suggestions_response.suggestions:
+                        x_data, y_data = get_column_data_for_visualization(
+                            app_state.cleaned_df,
+                            suggestion.column1_name,
+                            suggestion.column2_name,
+                            max_points=50,
+                        )
+
+                        if y_data:
+                            chart_data = create_line_chart_data(y_data, max_points=20)
+                        else:
+                            chart_data = []
+
+                        suggestions_data.append(
+                            {
+                                "Column 1": suggestion.column1_name,
+                                "Column 2": suggestion.column2_name,
+                                "Graph": chart_data,
+                                "Reasoning": suggestion.reasoning,
+                            }
+                        )
+
+                    suggestions_df = pd.DataFrame(suggestions_data)
+
+                    st.dataframe(
+                        suggestions_df,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Column 1": st.column_config.TextColumn(
+                                "Column 1", width="small"
+                            ),
+                            "Column 2": st.column_config.TextColumn(
+                                "Column 2", width="small"
+                            ),
+                            "Graph": st.column_config.LineChartColumn(
+                                "Graph",
+                                width="medium",
+                                help="Line chart showing the trend of Column 2 values",
+                            ),
+                            "Reasoning": st.column_config.TextColumn(
+                                "Reasoning", width="large"
+                            ),
+                        },
+                    )
+
+                else:
+                    st.warning(
+                        "⚠️ No valid suggestions were generated. Please try again or check your data."
+                    )
+
+            except Exception as e:
+                st.error(f"❌ Failed to generate column suggestions: {str(e)}")
+                if "API key" in str(e).lower() or "unauthorized" in str(e).lower():
+                    st.error("🔑 Please check your API key.")
+
+    elif not _has_valid_api_key(app_state):
+        st.info("Configure an API key to use AI column comparison suggestions")
+    elif not is_valid:
+        st.info(f"⚠️ {error_message}")
+
+
+def _process_chatbot_response(prompt: str, app_state: AppState) -> None:
+    """Process the chatbot response and update chat history."""
+    from llm.client import LLMClient
+    from models import ChatMessage
+    from datetime import datetime
+
+    try:
+        print(
+            f"[DEBUG] UI: Creating LLMClient with provider: {app_state.active_provider}"
+        )
+        llm_client = LLMClient(app_state.active_provider, app_state.active_api_key)
+
+        column_suggestions = getattr(st.session_state, "column_suggestions", None)
+        print(
+            f"[DEBUG] UI: Column suggestions available: {column_suggestions is not None}"
+        )
+
+        print(f"[DEBUG] UI: Starting to collect streaming response...")
+        full_response = ""
+        chunk_count = 0
+        for chunk in llm_client.stream_data_insights(
+            prompt,
+            app_state.chat_history[:-1],  # Exclude the current user message.
+            app_state.cleaned_df,
+            app_state.numeric_cols,
+            app_state.pca_state,
+            column_suggestions,
+        ):
+            chunk_count += 1
+            print(f"[DEBUG] UI: Received chunk {chunk_count}: {chunk}")
+            full_response += chunk
+
+        print(f"[DEBUG] UI: Streaming completed. Total chunks: {chunk_count}")
+        print(f"[DEBUG] UI: Full response length: {len(full_response)}")
+        print(f"[DEBUG] UI: Full response: {full_response}")
+
+        if full_response:
+            assistant_message = ChatMessage(
+                role="assistant",
+                content=full_response,
+                timestamp=datetime.now(),
+            )
+            app_state.chat_history.append(assistant_message)
+            print(
+                f"[DEBUG] UI: Added assistant message to chat history. Total messages: {len(app_state.chat_history)}"
+            )
+        else:
+            print(f"[DEBUG] UI: No response received from LLM")
+
+    except Exception as e:
+        error_msg = f"Sorry, I encountered an error: {str(e)}"
+        print(f"[ERROR] UI: Exception occurred: {error_msg}")
+        print(f"[ERROR] UI: Exception type: {type(e)}")
+
+        error_message = ChatMessage(
+            role="assistant", content=error_msg, timestamp=datetime.now()
+        )
+        app_state.chat_history.append(error_message)
+
+
+def _render_chatbot_interface(
+    app_state: AppState, uploaded_csv_file: Any
+) -> tuple[AppState, bool]:
+    """Render the Data Analysis Assistant chatbot interface."""
+    from models import ChatMessage
+    from datetime import datetime
+
+    if not _has_valid_api_key(app_state):
+        st.warning("⚠️ Please configure an API key above to use the chatbot.")
+        return app_state, False
+
+    if uploaded_csv_file is None or app_state.cleaned_df.empty:
+        st.info(
+            "📊 Please upload a CSV file to start asking questions about your data."
+        )
+        return app_state, False
+
+    if st.button("🗑️ Clear Chat", key="clear_chat_btn"):
+        app_state.chat_history = []
+        st.rerun()
+
+    with st.container():
+        for message in app_state.chat_history:
+            with st.chat_message(message.role):
+                st.write(message.content)
+
+    if prompt := st.chat_input(
+        "Ask me anything about your data...", key="data_chat_input"
+    ):
+        print(f"[DEBUG] UI: User submitted prompt: {prompt}")
+        user_message = ChatMessage(
+            role="user", content=prompt, timestamp=datetime.now()
+        )
+        app_state.chat_history.append(user_message)
+        print(
+            f"[DEBUG] UI: Added user message to chat history. Total messages: {len(app_state.chat_history)}"
+        )
+
+        _process_chatbot_response(prompt, app_state)
+
+        print(f"[DEBUG] UI: Calling st.rerun() to refresh chat display")
+        st.rerun()
+
+    return app_state, False
+
+
+def render_ai_helper_tab(
+    app_state: AppState, uploaded_csv_file: Any
+) -> tuple[AppState, bool]:
+    """Renders the AI Data Assistant tab UI with column suggestions and chatbot functionality."""
     rerun_needed = False
 
     with st.expander("🔑 API Key Management", expanded=False):
-        provider = st.selectbox(
-            "Provider", ["OpenRouter", "Gemini", "OpenAI"], key="api_provider"
-        )
-        key_value = st.text_input("API Key", type="password", key="api_key_input")
-        if st.button("Set API Key") and key_value:
-            app_state.active_provider = provider
-            app_state.active_api_key = key_value
-            st.success(f"API key set for {provider}")
+        api_rerun_needed = _render_api_key_management(app_state, uploaded_csv_file)
+        if api_rerun_needed:
             rerun_needed = True
 
-        if hasattr(app_state, "active_provider") and hasattr(
-            app_state, "active_api_key"
-        ):
-            if app_state.active_provider and app_state.active_api_key:
-                st.info(f"✅ API key configured for {app_state.active_provider}")
-            else:
-                st.warning("⚠️ No API key configured")
-        else:
-            st.warning("⚠️ No API key configured")
-
-        if (
-            hasattr(app_state, "active_provider")
-            and hasattr(app_state, "active_api_key")
-            and app_state.active_provider
-            and app_state.active_api_key
-            and uploaded_csv_file
-            and app_state.last_processed_filename != uploaded_csv_file.name
-        ):
-            with st.spinner("Generating title using AI..."):
-                llm_client = LLMClient(
-                    app_state.active_provider, app_state.active_api_key
-                )
-                title = llm_client.generate_title(
-                    uploaded_csv_file.name,
-                    app_state.cleaned_df.columns.tolist(),
-                )
-                if title:
-                    # Set the title and trigger typewriter effect
-                    app_state.generated_title = title
-                    app_state.last_processed_filename = uploaded_csv_file.name
-                    app_state.title_needs_typewriter = True
-                    st.success(f"Generated title: {title}")
-                    rerun_needed = True
-
     with st.expander("📊 Column Comparison Suggestions", expanded=False):
-        is_valid, error_message = validate_data_for_suggestions(
-            app_state.cleaned_df, app_state.numeric_cols
-        )
-
-        if (
-            hasattr(app_state, "active_provider")
-            and hasattr(app_state, "active_api_key")
-            and app_state.active_provider
-            and app_state.active_api_key
-            and is_valid
-        ):
-            if st.button(
-                "Get AI Column Comparison Suggestions", key="column_suggestion_btn"
-            ):
-                try:
-                    with st.spinner(
-                        "🔄 Generating column suggestions... This may take a few moments."
-                    ):
-                        data_summary = prepare_data_for_llm(
-                            app_state.cleaned_df, app_state.numeric_cols, sample_rows=5
-                        )
-
-                        llm_client = LLMClient(
-                            app_state.active_provider, app_state.active_api_key
-                        )
-                        suggestions_response = llm_client.get_column_suggestions(
-                            data_summary
-                        )
-
-                    if suggestions_response.suggestions:
-                        st.success(
-                            f"✅ Generated {len(suggestions_response.suggestions)} suggestions!"
-                        )
-
-                        # Store suggestions in session state for persistence with use of AI chatbot.
-                        st.session_state.column_suggestions = suggestions_response
-
-                        suggestions_data = []
-
-                        for suggestion in suggestions_response.suggestions:
-                            x_data, y_data = get_column_data_for_visualization(
-                                app_state.cleaned_df,
-                                suggestion.column1_name,
-                                suggestion.column2_name,
-                                max_points=50,
-                            )
-
-                            if y_data:
-                                chart_data = create_line_chart_data(
-                                    y_data, max_points=20
-                                )
-                            else:
-                                chart_data = []
-
-                            suggestions_data.append(
-                                {
-                                    "Column 1": suggestion.column1_name,
-                                    "Column 2": suggestion.column2_name,
-                                    "Graph": chart_data,
-                                    "Reasoning": suggestion.reasoning,
-                                }
-                            )
-
-                        suggestions_df = pd.DataFrame(suggestions_data)
-
-                        st.dataframe(
-                            suggestions_df,
-                            use_container_width=True,
-                            hide_index=True,
-                            column_config={
-                                "Column 1": st.column_config.TextColumn(
-                                    "Column 1", width="small"
-                                ),
-                                "Column 2": st.column_config.TextColumn(
-                                    "Column 2", width="small"
-                                ),
-                                "Graph": st.column_config.LineChartColumn(
-                                    "Graph",
-                                    width="medium",
-                                    help="Line chart showing the trend of Column 2 values",
-                                ),
-                                "Reasoning": st.column_config.TextColumn(
-                                    "Reasoning", width="large"
-                                ),
-                            },
-                        )
-
-                    else:
-                        st.warning(
-                            "⚠️ No valid suggestions were generated. Please try again or check your data."
-                        )
-
-                except Exception as e:
-                    st.error(f"❌ Failed to generate column suggestions: {str(e)}")
-                    if "API key" in str(e).lower() or "unauthorized" in str(e).lower():
-                        st.error("🔑 Please check your API key.")
-
-        elif not (
-            hasattr(app_state, "active_provider")
-            and hasattr(app_state, "active_api_key")
-            and app_state.active_provider
-            and app_state.active_api_key
-        ):
-            st.info("Configure an API key to use AI column comparison suggestions")
-        elif not is_valid:
-            st.info(f"⚠️ {error_message}")
+        _render_column_suggestions(app_state)
 
     with st.expander("💬 Data Analysis Assistant", expanded=True):
-        if not (
-            hasattr(app_state, "active_provider")
-            and hasattr(app_state, "active_api_key")
-            and app_state.active_provider
-            and app_state.active_api_key
-        ):
-            st.warning("⚠️ Please configure an API key above to use the chatbot.")
-            return app_state, rerun_needed
-
-        if uploaded_csv_file is None or app_state.cleaned_df.empty:
-            st.info(
-                "📊 Please upload a CSV file to start asking questions about your data."
-            )
-            return app_state, rerun_needed
-
-        if st.button("🗑️ Clear Chat", key="clear_chat_btn"):
-            app_state.chat_history = []
-            st.rerun()
-
-        with st.container():
-            for message in app_state.chat_history:
-                with st.chat_message(message.role):
-                    st.write(message.content)
-
-        if prompt := st.chat_input(
-            "Ask me anything about your data...", key="data_chat_input"
-        ):
-            print(f"[DEBUG] UI: User submitted prompt: {prompt}")
-            user_message = ChatMessage(
-                role="user", content=prompt, timestamp=datetime.now()
-            )
-            app_state.chat_history.append(user_message)
-            print(
-                f"[DEBUG] UI: Added user message to chat history. Total messages: {len(app_state.chat_history)}"
-            )
-
-            # Process assistant response then add ot history and render.
-            try:
-                print(
-                    f"[DEBUG] UI: Creating LLMClient with provider: {app_state.active_provider}"
-                )
-                llm_client = LLMClient(
-                    app_state.active_provider, app_state.active_api_key
-                )
-
-                column_suggestions = getattr(
-                    st.session_state, "column_suggestions", None
-                )
-                print(
-                    f"[DEBUG] UI: Column suggestions available: {column_suggestions is not None}"
-                )
-
-                print(f"[DEBUG] UI: Starting to collect streaming response...")
-                full_response = ""
-                chunk_count = 0
-                for chunk in llm_client.stream_data_insights(
-                    prompt,
-                    app_state.chat_history[:-1],  # Exclude the current user message.
-                    app_state.cleaned_df,
-                    app_state.numeric_cols,
-                    app_state.pca_state,
-                    column_suggestions,
-                ):
-                    chunk_count += 1
-                    print(f"[DEBUG] UI: Received chunk {chunk_count}: {chunk}")
-                    full_response += chunk
-
-                print(f"[DEBUG] UI: Streaming completed. Total chunks: {chunk_count}")
-                print(f"[DEBUG] UI: Full response length: {len(full_response)}")
-                print(f"[DEBUG] UI: Full response: {full_response}")
-
-                if full_response:
-                    assistant_message = ChatMessage(
-                        role="assistant",
-                        content=full_response,
-                        timestamp=datetime.now(),
-                    )
-                    app_state.chat_history.append(assistant_message)
-                    print(
-                        f"[DEBUG] UI: Added assistant message to chat history. Total messages: {len(app_state.chat_history)}"
-                    )
-                else:
-                    print(f"[DEBUG] UI: No response received from LLM")
-
-            except Exception as e:
-                error_msg = f"Sorry, I encountered an error: {str(e)}"
-                print(f"[ERROR] UI: Exception occurred: {error_msg}")
-                print(f"[ERROR] UI: Exception type: {type(e)}")
-
-                error_message = ChatMessage(
-                    role="assistant", content=error_msg, timestamp=datetime.now()
-                )
-                app_state.chat_history.append(error_message)
-
-            print(f"[DEBUG] UI: Calling st.rerun() to refresh chat display")
-            st.rerun()
+        app_state, chat_rerun_needed = _render_chatbot_interface(
+            app_state, uploaded_csv_file
+        )
+        if chat_rerun_needed:
+            rerun_needed = True
 
     return app_state, rerun_needed
 
