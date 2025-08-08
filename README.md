@@ -1,219 +1,149 @@
-# 🔬 Engineering Data Analysis Dashboard
+# Engineering Data Analysis Dashboard
 
-A comprehensive AI-powered data visualization and analysis platform designed for engineering datasets, featuring advanced statistical analysis, machine learning insights, and intelligent data exploration capabilities.
+**AI-powered data visualization and analysis platform for engineering datasets**
 
----
+![Dashboard Demo](https://i.imgur.com/G33RVjW.gif)
 
-## ✨ Core Features
-
-### 📤 **Intelligent Data Upload & Processing**
-
-**Smart CSV Processing**
-- **Drag-and-drop file upload** with instant data validation
-- **Automatic data cleaning** - removes missing values and identifies numeric columns
-- **Intelligent data sampling** for optimal performance with large datasets (10k+ rows)
-- **Real-time data preview** with statistical summaries
-
-> **[GIF: Drag-and-drop CSV upload process showing file validation and data preview]**
-
-**Data Quality Assurance**
-- Automatic detection of numeric vs categorical columns
-- Missing value handling with transparent reporting
-- Data type validation and conversion
-- Export capabilities for cleaned datasets
+_Transform your engineering data into actionable insights with advanced statistical analysis, machine learning, and intelligent AI assistance._
 
 ---
 
-### 🤖 **AI-Powered Data Intelligence**
+## Quick Start 🚀
 
-**Smart Dashboard Personalization**
-- **Automatic title generation** - AI analyzes your dataset and creates professional dashboard titles
-- **Context-aware naming** based on column patterns and data characteristics
-- **Multi-provider AI support** (OpenAI, Google Gemini, OpenRouter)
+### Requirements
 
-> **[GIF: AI generating custom dashboard title from uploaded engineering data]**
+*   Python 3.8+
+*   Modern web browser
 
-**Intelligent Column Analysis**
-- **AI-powered column pairing suggestions** with detailed reasoning
-- **Embedded trend visualizations** showing data relationships at a glance
-- **Statistical correlation insights** for meaningful data comparisons
-- **Interactive suggestion display** with mini-charts and analysis rationale
+### Install & Run
 
-> **[GIF: AI generating column comparison suggestions with embedded trend charts and reasoning]**
+```
+git clone https://github.com/AutumnVulpes/manufacturing-analysis-app
+cd manufacturing-analysis-app
+pip install -r requirements.txt
+streamlit run app.py
+```
 
-**Conversational Data Assistant**
-- **Real-time AI chat interface** for data exploration
-- **Context-aware responses** using your specific dataset
-- **Statistical analysis on-demand** - ask questions about patterns, trends, correlations
-- **Intelligent query filtering** - only responds to data-relevant questions
-- **Persistent chat history** throughout your analysis session
+### Get Started
 
-> **[GIF: Chat interface showing user asking questions about data patterns and receiving AI insights]**
+1.  **Upload your CSV** - Drag and drop your engineering dataset
+2.  **Configure AI** (optional) - Add API key for intelligent insights
+3.  **Explore data** - Use PCA, visualizations, and AI chat
 
 ---
 
-### 📊 **Advanced Principal Component Analysis (PCA)**
+## Core Features
 
-**Automated Dimensionality Reduction**
-- **One-click PCA processing** with standardized data scaling
-- **95% variance optimization** - automatically determines optimal component count
-- **Interactive component selection** with real-time variance tracking
-- **Enhanced dataset export** with principal components included
+### 📊 **Smart Data Processing**
 
-> **[GIF: PCA configuration process showing column selection and automated analysis]**
+*   **Automatic data cleaning** and validation
+*   **Intelligent sampling** for large datasets (10k+ rows)
+*   **Real-time preview** with statistical summaries
 
-**Comprehensive PCA Visualization**
-- **Interactive Scree Plots** - identify optimal number of components with elbow detection
-- **Cumulative Variance Charts** - track explained variance across components
-- **95% variance threshold indicators** with optimal component highlighting
-- **Downloadable PCA visualizations** (PNG export)
+<img src="https://i.imgur.com/mYdhXB0.gif" alt="Data Upload Demo" width="50%" height="50%">
 
-> **[GIF: Navigating between scree plot and cumulative variance visualizations]**
+### 🤖 **AI-Powered Analysis**
 
-**Mathematical Transparency**
-- **Detailed PCA formulas** with LaTeX rendering for each principal component
-- **Component coefficient display** showing exact mathematical transformations
-- **Standardization formulas** with mean and standard deviation calculations
-- **Expandable formula sections** for in-depth mathematical understanding
+*   **Automatic title generation** based on your dataset
+*   **Column pairing suggestions** with reasoning
+*   **Conversational data assistant** for real-time insights
 
-> **[IMAGE: Mathematical formulas display showing PCA component calculations with LaTeX formatting]**
+<img src="https://i.imgur.com/BIiDxVm.gif" alt="AI assistant demo" width="50%" height="50%">
 
----
+### 📈 **Advanced Analytics**
 
-### 📈 **Interactive Data Visualization**
+*   **Principal Component Analysis** with 95% variance optimization
+*   **Interactive scatter plots** with real-time filtering
+*   **Mathematical formulas** with LaTeX rendering
+*   **Deeper insight** with scree and cumulative variance plots
 
-**Dynamic Scatter Plot Analysis**
-- **Customizable axis selection** from any numeric columns
-- **Real-time plot updates** as you change configurations
-- **Professional styling** with automatic axis labeling and scaling
-- **High-resolution PNG export** for reports and presentations
+<img src="https://i.imgur.com/y0SmMtl.gif" alt="PCA analysis demo" width="50%" height="50%">
 
-> **[GIF: Creating scatter plots with different axis combinations and customization options]**
+### 💬 **Interactive Insights**
 
-**Advanced Data Filtering**
-- **Interactive range sliders** for precise data subset selection
-- **Multi-column filtering** with independent range controls
-- **Real-time plot updates** as filters are adjusted
-- **Visual feedback** showing filtered data points and statistics
-
-> **[GIF: Using filter sliders to focus on specific data ranges and seeing real-time plot updates]**
-
-**Export & Sharing**
-- **One-click PNG downloads** for all visualizations
-- **High-quality image generation** suitable for professional reports
-- **Batch export capabilities** for multiple chart types
-- **Consistent styling** across all exported visualizations
+*   **Real-time chat interface** for data exploration
+*   **Statistical analysis on-demand**
 
 ---
 
-### 🎛️ **Advanced Analytics Dashboard**
+## Advanced Usage
 
-**Organized Workflow Interface**
-- **Tabbed navigation system** for different analysis types:
-  - **PCA Configuration** - dimensionality reduction setup
-  - **PCA Formulas** - mathematical component details  
-  - **Visualization Config** - scatter plot and filtering controls
-  - **AI Data Assistant** - intelligent analysis and chat
-- **Responsive design** adapting to different screen sizes
-- **Persistent state management** - your settings are remembered
+### AI Configuration
 
-**Performance Optimization**
-- **Intelligent caching** for faster repeated operations
-- **Optimized data processing** for large datasets
-- **Responsive UI updates** with minimal loading times
-- **Memory-efficient operations** for sustained analysis sessions
+Configure your preferred AI provider for enhanced features:
 
-**Statistical Insights**
-- **Comprehensive data summaries** (mean, std dev, min/max, count)
-- **Real-time statistics updates** as you filter data
-- **Correlation analysis** through AI-powered suggestions
-- **Pattern recognition** via principal component analysis
+```python
+# Supported providers
+providers = ["OpenAI", "Google Gemini", "OpenRouter"]
+```
 
----
+Add your API key in the dashboard to enable:
 
-## 🛠️ **Technology Stack**
+*   Intelligent column suggestions
+*   Automatic title generation
+*   Conversational data analysis
 
-**Frontend & Visualization**
-- **Streamlit** - Modern web app framework with custom CSS styling
-- **Plotly Express** - Interactive, publication-quality charts
-- **Responsive design** with dark/light theme support
+### PCA Optimization
 
-**Data Processing & Analytics**
-- **Pandas** - High-performance data manipulation and analysis
-- **NumPy** - Numerical computing foundation
-- **Scikit-learn** - Machine learning and statistical analysis
-- **StandardScaler** - Data normalization for PCA
+The system automatically determines optimal principal components:
 
-**AI Integration**
-- **OpenAI API** - GPT models for intelligent analysis
-- **Google Gemini** - Advanced language model support
-- **OpenRouter** - Multi-provider AI access
-- **Instructor** - Structured AI responses with Pydantic validation
-- **Tenacity** - Robust retry mechanisms for API reliability
+*   **Standardized data scaling** for accurate analysis
+*   **95% variance threshold** for component selection
+*   **Enhanced dataset export** with principal components
+
+### Data Export
+
+Download your processed data:
+
+*   **Cleaned datasets** with missing values removed
+*   **PCA-enhanced data** with principal components
+*   **High-quality visualizations** as PNG files
 
 ---
 
-## 🚀 **Quick Start Guide**
+## Use Cases
 
-### **1. Upload Your Data**
-- Drag and drop your CSV file or click to browse
-- Automatic data validation and cleaning
-- Instant preview of your dataset
+**Engineering Design & Testing**
 
-### **2. Configure AI Assistant (Optional)**
-- Add your API key (OpenAI, Gemini, or OpenRouter)
-- Get intelligent dashboard title generation
-- Enable AI-powered column suggestions
-
-### **3. Explore with PCA**
-- Automatic principal component analysis
-- View scree plots and variance explanations
-- Export enhanced dataset with PC components
-
-### **4. Create Visualizations**
-- Select X and Y axes for scatter plots
-- Apply interactive filters to focus your analysis
-- Download high-quality PNG exports
-
-### **5. Get AI Insights**
-- Ask questions about your data patterns
-- Receive context-aware statistical analysis
-- Build persistent analysis conversations
-
----
-
-## 🎯 **Use Cases**
-
-**Engineering Design & Analysis**
-- Explore relationships between design parameters and performance
-- Identify key variables affecting system behavior
-- Optimize engineering processes and configurations
-
-**Quality Control & Testing**
-- Analyze test metrics and identify quality patterns
-- Correlate process parameters with output characteristics
-- Reduce dimensionality of complex sensor data
+*   Analyze relationships between design parameters and performance
+*   Identify key variables affecting system behavior
+*   Optimize engineering processes through data insights
 
 **Research & Development**
-- Analyze experimental datasets with multiple variables
-- Discover hidden patterns through PCA
-- Generate hypotheses through AI-powered insights
+
+*   Explore experimental datasets with multiple variables
+*   Discover hidden patterns through principal component analysis
+*   Generate data-driven hypotheses with AI assistance
 
 ---
 
-## 🔒 **Privacy & Security**
+## Technology Stack
 
-- **Local processing** - your data never leaves your environment
-- **API key security** - keys are stored only in session memory
-- **No data persistence** - uploaded files are processed in memory only
-- **Open source** - full transparency of data handling
+*   **Frontend**: Streamlit with custom CSS
+*   **Visualization**: Plotly Express for interactive charts
+*   **Analytics**: Pandas, NumPy, Scikit-learn
+*   **AI Integration**: OpenAI, Google Gemini, OpenRouter APIs
+*   **Data Processing**: Automated cleaning and PCA optimization
 
 ---
 
-<div align="center">
+## Privacy & Security
 
-**Made with ❤️ by [@AutumnVulpes](https://github.com/AutumnVulpes)**
+*   **Local processing** - Your data stays in your environment
+*   **Session-only storage** - No persistent data retention
+*   **API key security** - Keys stored only in session memory
+*   **Open source** - Full transparency of data handling
 
-[🌟 Star this repo](https://github.com/AutumnVulpes/manufacturing-analysis-app) | [🐛 Report Issues](https://github.com/AutumnVulpes/manufacturing-analysis-app/issues) | [💡 Request Features](https://github.com/AutumnVulpes/manufacturing-analysis-app/discussions)
+---
 
-</div>
+## Contributing
+
+Found an issue or have a feature request?
+
+*   🐛 [Report bugs](https://github.com/AutumnVulpes/manufacturing-analysis-app/issues)
+*   💡 [Request features](https://github.com/AutumnVulpes/manufacturing-analysis-app/discussions)
+*   ⭐ [Star this repo](https://github.com/AutumnVulpes/manufacturing-analysis-app)
+
+---
+
+**Built by** [**@AutumnVulpes**](https://github.com/AutumnVulpes)
