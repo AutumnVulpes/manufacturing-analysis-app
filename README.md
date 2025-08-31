@@ -5,6 +5,7 @@
 ![Dashboard Demo](https://i.imgur.com/G33RVjW.gif)
 
 _Transform your engineering data into actionable insights with advanced statistical analysis, machine learning, and intelligent AI assistance._
+_Try out the app [here!](https://vulpes-data-visualization.streamlit.app/)
 
 ---
 
